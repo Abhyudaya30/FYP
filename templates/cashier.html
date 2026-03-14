@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cashier Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+
+<div class="cashier-container">
+    <div class="top-nav">
+        <h2 style="margin:0;">Store Monitor</h2>
+        <button class="btn-reset-all" onclick="triggerGlobalReset()">Reset All Carts</button>
+    </div>
+
+    <div id="cart-wrapper" class="cart-grid">
+        </div>
+</div>
+
+<script>
+    async function refreshDashboard() {
+        try {
+            const res = await fetch('/api/all_carts_status');
+            const carts = await res.json();
+            const wrapper = document.getElementById('cart-wrapper');
+            
+            let htmlString = "";
+            carts.forEach(c => {
+                const isActive = (c.status === 'active');
+                htmlString += `
+                    <div class="card ${isActive ? 'active' : ''}">
+                        <div class="cart-title">CART ${c.cart_label}</div>
+                        <span class="status-tag ${isActive ? 'status-active' : 'status-idle'}">
+                            ${isActive ? 'Busy' : 'Idle'}
+                        </span>
+                        <div class="price-display">Rs. ${c.total_cost}</div>
+                        
+                        ${isActive ? `
+                            <button class="btn-main" onclick="window.location.href='/cart/${c.cart_label}'">Open Bill</button>
+                            <button class="btn-reset-single" onclick="resetSingleCart('${c.cart_label}')">Reset This Cart</button>
+                        ` : '<p style="color:#999; margin-top:20px;">Ready for customer</p>'}
+                    </div>
+                `;
+            });
+            wrapper.innerHTML = htmlString;
+        } catch (err) { console.error("Update error:", err); }
+    }
+
+    // Function to reset just ONE cart
+    async function resetSingleCart(label) {
+        if(confirm(`End session for Cart ${label}?`)) {
+            const res = await fetch(`/api/end_session/${label}`, { method: 'POST' });
+            const data = await res.json();
+            if(data.status === 'success') {
+                refreshDashboard();
+            }
+        }
+    }
+
+    // Function for Global Reset
+    async function triggerGlobalReset() {
+        if(confirm("Complete ALL active sessions?")) {
+            await fetch('/api/reset_everything', { method: 'POST' });
+            refreshDashboard();
+        }
+    }
+
+    setInterval(refreshDashboard, 2000);
+    refreshDashboard();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome - Smart Cart</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="app-bg">
+    <div class="app-shell center-content">
+        <div class="hero-section">
+            <div class="logo-circle">🛒</div>
+            <h1 class="top-title">Smart Cart System</h1>
+            <p class="section-subtitle">Fast • Easy • Contactless</p>
+        </div>
+        
+        <div class="content">
+            <p class="welcome-text">Scan items directly with your cart and view your live bill here.</p>
+            <button class="primary-btn wide-btn" onclick="window.location.href='/start'">
+                Start Shopping
+            </button>
+        </div>
+    </div>
+</body>
+</html>

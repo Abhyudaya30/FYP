@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inventory Management</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        .add-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+        .form-row { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+        .delete-btn { background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+        .delete-btn:hover { background: #dc2626; }
+    </style>
+</head>
+<body class="app-bg">
+    <div class="app-shell" style="max-width: 1000px;"> 
+        <header class="top-bar">
+            <h1 class="top-title">Inventory Management</h1>
+            <span class="top-badge" style="background: #ef4444; color: white;">ADMIN PANEL</span>
+        </header>
+
+        <div class="content">
+            <div class="add-box">
+                <h3>+ Add New Product</h3>
+                <div class="form-row">
+                    <input type="text" id="new-name" placeholder="Name" class="admin-input">
+                    <input type="text" id="new-barcode" placeholder="Barcode" class="admin-input">
+                    <input type="number" id="new-price" placeholder="Price" class="admin-input">
+                    <input type="number" id="new-stock" placeholder="Stock" class="admin-input">
+                    <input type="number" id="new-weight" placeholder="Weight (g)" class="admin-input">
+                    <button class="edit-btn" onclick="addProduct()" style="background: #22c55e;">Add Item</button>
+                </div>
+            </div>
+
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Product Name</th>
+                        <th>Barcode</th>
+                        <th>Price (Rs.)</th>
+                        <th>Stock</th>
+                        <th>Weight (g)</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in products %}
+                    <tr id="row-{{ p.product_id }}">
+                        <td><strong>{{ p.name }}</strong></td>
+                        <td><code>{{ p.barcode }}</code></td>
+                        <td><input type="number" id="price-{{ p.product_id }}" value="{{ p.unit_price }}" class="admin-input" style="width: 80px;"></td>
+                        <td><input type="number" id="stock-{{ p.product_id }}" value="{{ p.stock_quantity }}" class="admin-input" style="width: 60px;"></td>
+                        <td><input type="number" id="weight-{{ p.product_id }}" value="{{ p.weight }}" class="admin-input" style="width: 70px;"></td>
+                        <td>
+                            <button class="edit-btn" onclick="saveChange('{{ p.product_id }}')">Save</button>
+                            <button class="delete-btn" onclick="deleteProduct('{{ p.product_id }}')">Delete</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function saveChange(id) {
+            const price = document.getElementById(`price-${id}`).value;
+            const stock = document.getElementById(`stock-${id}`).value;
+            const weight = document.getElementById(`weight-${id}`).value;
+            
+            const response = await fetch('/api/update_product', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id, price, stock, weight })
+            });
+            if (response.ok) alert("Updated!");
+        }
+
+        async function addProduct() {
+            const name = document.getElementById('new-name').value;
+            const barcode = document.getElementById('new-barcode').value;
+            const price = document.getElementById('new-price').value;
+            const stock = document.getElementById('new-stock').value;
+            const weight = document.getElementById('new-weight').value;
+
+            const response = await fetch('/api/add_product', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, barcode, price, stock, weight })
+            });
+            if (response.ok) location.reload();
+        }
+
+        async function deleteProduct(id) {
+            if (confirm("Are you sure you want to remove this item?")) {
+                const response = await fetch(`/api/delete_product/${id}`, { method: 'DELETE' });
+                if (response.ok) document.getElementById(`row-${id}`).remove();
+            }
+        }
+    </script>
+</body>
+</html>

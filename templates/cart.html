@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Cart - Live Bill</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body class="app-bg">
+  <div class="app-shell">
+    <header class="top-bar">
+      <button class="icon-btn">☰</button>
+      <h1 class="top-title">Cart #<span id="displayCartLabel">00</span></h1>
+      <span class="top-badge">Smart Cart</span>
+    </header>
+
+    <main class="content">
+
+      <section class="scanner-section">
+        <div class="scanner-shell">
+
+          <div class="scanner-header">
+            <div class="scanner-header-left">
+              <div class="scanner-dot"></div>
+              <span class="scanner-label">Barcode Scanner</span>
+            </div>
+            <span class="scanner-badge">LIVE</span>
+          </div>
+
+          <div class="scanner-viewport">
+            <div id="reader" style="width:100%;"></div>
+          </div>
+
+          <div class="scanner-status-bar">
+            <span class="status-icon">📡</span>
+            <p id="scan-status">Camera ready for scanning</p>
+          </div>
+
+        </div>
+      </section>
+
+      <section class="cart-header">
+        <div>
+          <h2 class="section-title">Items in Cart</h2>
+          <p class="section-subtitle">Review products before checkout</p>
+        </div>
+        <span class="item-count-pill" id="itemCount">0 items</span>
+      </section>
+
+      <section class="cart-list" id="cartList"></section>
+
+      <section class="summary-card">
+        <div class="summary-row">
+          <span>Subtotal</span>
+          <span id="summarySubtotal">Rs. 0</span>
+        </div>
+        <div class="summary-row">
+          <span>Discount</span>
+          <span id="summaryDiscount">Rs. 0</span>
+        </div>
+        <hr class="summary-hr" />
+        <div class="summary-row total-row">
+          <span>Total Payable</span>
+          <span id="summaryTotal">Rs. 0</span>
+        </div>
+
+        <button class="primary-btn wide-btn" onclick="endSession()">
+          Finish Shopping
+        </button>
+        <p class="footer-note">Proceed to the counter to pay.</p>
+      </section>
+    </main>
+  </div>
+
+  <div id="scanModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; align-items:center; justify-content:center; padding: 20px;">
+    <div style="background:white; padding:25px; border-radius:15px; width:100%; max-width:350px; text-align:center; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+        <h2 id="modalProdName" style="margin:0 0 10px 0; color:#333;">Product Name</h2>
+        <p id="modalProdPrice" style="font-size:1.4rem; color:#28a745; font-weight:bold; margin-bottom:20px;">Rs. 0</p>
+        <div style="display:flex; gap:10px;">
+            <button onclick="confirmAddition()" style="flex:1; padding:12px; background:#28a745; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Add to Cart</button>
+            <button onclick="closeModal()" style="flex:1; padding:12px; background:#eee; color:#333; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Cancel</button>
+        </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='cart.js') }}"></script>
+</body>
+</html>

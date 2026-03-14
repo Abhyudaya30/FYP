@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Success - Smart Cart</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="app-bg">
+    <div class="app-shell center-content">
+        <div class="hero-section">
+            <div class="success-icon">✅</div>
+            <h1 class="top-title">Session Completed!</h1>
+            <p class="section-subtitle">Thank you for shopping with us.</p>
+        </div>
+        
+        <div class="content">
+            <div class="instruction-card">
+                <p>Please show your <strong>Cart #01</strong> to the cashier to complete the payment.</p>
+            </div>
+            <button class="primary-btn wide-btn" onclick="window.location.href='/'">
+                Back to Home
+            </button>
+        </div>
+    </div>
+</body>
+</html>
