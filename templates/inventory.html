@@ -9,10 +9,50 @@
         .form-row { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
         .delete-btn { background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
         .delete-btn:hover { background: #dc2626; }
+        
+        /* Layout Fixes */
+        .app-shell { max-width: 1200px !important; width: 95%; } /* Increased width for more space */
+        
+        .admin-table { width: 100%; border-collapse: collapse; table-layout: auto; }
+        
+        /* Column Specific Sizing */
+        .col-name { min-width: 200px; }
+        .col-barcode { min-width: 150px; }
+        
+        .admin-table input {
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 0.95rem;
+        }
+
+        .admin-table input:disabled {
+            background: transparent;
+            border: none;
+            color: #333;
+            cursor: default;
+            font-weight: inherit;
+            text-overflow: ellipsis; /* Adds ... if name is still too long */
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        
+        .admin-table input:enabled {
+            border: 1px solid #cbd5e1;
+            background: white;
+            padding: 6px;
+            border-radius: 4px;
+        }
+
+        .save-btn { background: #22c55e; color: white; display: none; }
+        .barcode-field { font-family: monospace; color: #475569; }
+        .name-field { font-weight: bold; }
+        
+        /* Action buttons alignment */
+        .action-cell { display: flex; gap: 5px; white-space: nowrap; }
     </style>
 </head>
 <body class="app-bg">
-    <div class="app-shell" style="max-width: 1000px;"> 
+    <div class="app-shell"> 
         <header class="top-bar">
             <h1 class="top-title">Inventory Management</h1>
             <span class="top-badge" style="background: #ef4444; color: white;">ADMIN PANEL</span>
@@ -22,20 +62,20 @@
             <div class="add-box">
                 <h3>+ Add New Product</h3>
                 <div class="form-row">
-                    <input type="text" id="new-name" placeholder="Name" class="admin-input">
-                    <input type="text" id="new-barcode" placeholder="Barcode" class="admin-input">
-                    <input type="number" id="new-price" placeholder="Price" class="admin-input">
-                    <input type="number" id="new-stock" placeholder="Stock" class="admin-input">
-                    <input type="number" id="new-weight" placeholder="Weight (g)" class="admin-input">
-                    <button class="edit-btn" onclick="addProduct()" style="background: #22c55e;">Add Item</button>
+                    <input type="text" id="new-name" placeholder="Product Name" class="admin-input" style="flex: 2;">
+                    <input type="text" id="new-barcode" placeholder="Barcode" class="admin-input" style="flex: 1.5;">
+                    <input type="number" id="new-price" placeholder="Price" class="admin-input" style="flex: 1;">
+                    <input type="number" id="new-stock" placeholder="Stock" class="admin-input" style="flex: 0.8;">
+                    <input type="number" id="new-weight" placeholder="Weight (g)" class="admin-input" style="flex: 1;">
+                    <button class="edit-btn" onclick="addProduct()" style="background: #22c55e; color: white; border:none; padding: 8px 15px; border-radius: 4px; cursor:pointer;">Add Item</button>
                 </div>
             </div>
 
             <table class="admin-table">
                 <thead>
                     <tr>
-                        <th>Product Name</th>
-                        <th>Barcode</th>
+                        <th class="col-name">Product Name</th>
+                        <th class="col-barcode">Barcode</th>
                         <th>Price (Rs.)</th>
                         <th>Stock</th>
                         <th>Weight (g)</th>
@@ -45,13 +85,14 @@
                 <tbody>
                     {% for p in products %}
                     <tr id="row-{{ p.product_id }}">
-                        <td><strong>{{ p.name }}</strong></td>
-                        <td><code>{{ p.barcode }}</code></td>
-                        <td><input type="number" id="price-{{ p.product_id }}" value="{{ p.unit_price }}" class="admin-input" style="width: 80px;"></td>
-                        <td><input type="number" id="stock-{{ p.product_id }}" value="{{ p.stock_quantity }}" class="admin-input" style="width: 60px;"></td>
-                        <td><input type="number" id="weight-{{ p.product_id }}" value="{{ p.weight }}" class="admin-input" style="width: 70px;"></td>
-                        <td>
-                            <button class="edit-btn" onclick="saveChange('{{ p.product_id }}')">Save</button>
+                        <td><input type="text" id="name-{{ p.product_id }}" value="{{ p.name }}" class="admin-input name-field" disabled></td>
+                        <td><input type="text" id="barcode-{{ p.product_id }}" value="{{ p.barcode }}" class="admin-input barcode-field" disabled></td>
+                        <td><input type="number" id="price-{{ p.product_id }}" value="{{ p.unit_price }}" class="admin-input" style="width: 85px;" disabled></td>
+                        <td><input type="number" id="stock-{{ p.product_id }}" value="{{ p.stock_quantity }}" class="admin-input" style="width: 65px;" disabled></td>
+                        <td><input type="number" id="weight-{{ p.product_id }}" value="{{ p.weight }}" class="admin-input" style="width: 75px;" disabled></td>
+                        <td class="action-cell">
+                            <button class="edit-btn" id="edit-btn-{{ p.product_id }}" onclick="enableEdit('{{ p.product_id }}')">Edit</button>
+                            <button class="edit-btn save-btn" id="save-btn-{{ p.product_id }}" onclick="saveChange('{{ p.product_id }}')">Save</button>
                             <button class="delete-btn" onclick="deleteProduct('{{ p.product_id }}')">Delete</button>
                         </td>
                     </tr>
@@ -62,17 +103,43 @@
     </div>
 
     <script>
+        function enableEdit(id) {
+            document.getElementById(`name-${id}`).disabled = false;
+            document.getElementById(`barcode-${id}`).disabled = false;
+            document.getElementById(`price-${id}`).disabled = false;
+            document.getElementById(`stock-${id}`).disabled = false;
+            document.getElementById(`weight-${id}`).disabled = false;
+            
+            document.getElementById(`edit-btn-${id}`).style.display = 'none';
+            document.getElementById(`save-btn-${id}`).style.display = 'inline-block';
+        }
+
         async function saveChange(id) {
+            const name = document.getElementById(`name-${id}`).value;
+            const barcode = document.getElementById(`barcode-${id}`).value;
             const price = document.getElementById(`price-${id}`).value;
             const stock = document.getElementById(`stock-${id}`).value;
             const weight = document.getElementById(`weight-${id}`).value;
+
+            if(!name || !barcode) return alert("Fields cannot be empty!");
             
             const response = await fetch('/api/update_product', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ id, price, stock, weight })
+                body: JSON.stringify({ id, name, barcode, price, stock, weight })
             });
-            if (response.ok) alert("Updated!");
+
+            if (response.ok) {
+                document.getElementById(`name-${id}`).disabled = true;
+                document.getElementById(`barcode-${id}`).disabled = true;
+                document.getElementById(`price-${id}`).disabled = true;
+                document.getElementById(`stock-${id}`).disabled = true;
+                document.getElementById(`weight-${id}`).disabled = true;
+                
+                document.getElementById(`edit-btn-${id}`).style.display = 'inline-block';
+                document.getElementById(`save-btn-${id}`).style.display = 'none';
+                alert("Updated!");
+            }
         }
 
         async function addProduct() {
@@ -81,6 +148,8 @@
             const price = document.getElementById('new-price').value;
             const stock = document.getElementById('new-stock').value;
             const weight = document.getElementById('new-weight').value;
+
+            if(!name || !barcode) return alert("Name and Barcode required!");
 
             const response = await fetch('/api/add_product', {
                 method: 'POST',
@@ -91,7 +160,7 @@
         }
 
         async function deleteProduct(id) {
-            if (confirm("Are you sure you want to remove this item?")) {
+            if (confirm("Delete this product?")) {
                 const response = await fetch(`/api/delete_product/${id}`, { method: 'DELETE' });
                 if (response.ok) document.getElementById(`row-${id}`).remove();
             }
