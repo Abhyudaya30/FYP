@@ -504,3 +504,19 @@ body {
   color: #9ca3af;
   margin: 0;
 }
+/* The red Remove button on each cart item */
+.remove-btn {
+    background-color: #fee2e2;
+    color: #ef4444;
+    border: 1px solid #fca5a5;
+    padding: 4px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.remove-btn:hover {
+    background-color: #ef4444;
+    color: white;
+}

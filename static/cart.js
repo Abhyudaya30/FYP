@@ -36,9 +36,13 @@ async function updateCart() {
                     <div>
                         <p class="item-name">${item.name}</p>
                         <p class="item-qty">Qty: ${item.quantity}</p>
-                        <button onclick="removeItem('${item.barcode}')" style="color:red; background:none; border:none; cursor:pointer; font-size:12px; padding:0;">Remove Item</button>
                     </div>
-                    <p class="item-price">Rs. ${item.unit_price * item.quantity}</p>
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+                        <p class="item-price">Rs. ${item.unit_price * item.quantity}</p>
+                        <button class="remove-btn" onclick="removeItem('${item.barcode}')">
+                            Remove
+                        </button>
+                    </div>
                 </div>`;
         });
 
@@ -49,7 +53,7 @@ async function updateCart() {
 }
 
 async function removeItem(barcode) {
-    if(!confirm("Are you sure you want to remove this item?")) return;
+    if (!confirm("Are you sure you want to remove this item?")) return;
     try {
         await fetch('/api/remove_item', {
             method: 'POST',
@@ -105,30 +109,34 @@ function closeModal() {
     setTimeout(() => { html5QrcodeScanner.resume(); }, 500);
 }
 
-// Automatically starts the back camera with no UI dropdowns
 let html5QrcodeScanner = new Html5Qrcode("reader");
-
-html5QrcodeScanner.start(
-    { facingMode: { exact: "environment" } },
-    { fps: 20, qrbox: { width: 250, height: 150 } },
-    onScanSuccess
-).catch(() => {
-    // If no back camera is found, fall back to front camera
-    html5QrcodeScanner.start(
-        { facingMode: "user" },
-        { fps: 20, qrbox: { width: 250, height: 150 } },
-        onScanSuccess
-    );
+html5QrcodeScanner.start({ facingMode: "environment" }, { fps: 20, qrbox: { width: 250, height: 150 } }, onScanSuccess)
+.catch(() => {
+    html5QrcodeScanner.start({ facingMode: "user" }, { fps: 20, qrbox: { width: 250, height: 150 } }, onScanSuccess);
 });
 
 async function endSession() {
     if (confirm("Are you sure you want to finish shopping?")) {
+        // Stop all background processes
         clearInterval(cartInterval);
         clearInterval(securityInterval);
-        await html5QrcodeScanner.stop();
+        
+        try {
+            if (html5QrcodeScanner.getState() === 2) { 
+                await html5QrcodeScanner.stop();
+            }
+        } catch (e) { console.log("Camera cleanup"); }
+
         const response = await fetch(`/api/end_session/${cartLabel}`, { method: 'POST' });
-        if (response.ok) { window.location.assign("/success"); }
-        else { cartInterval = setInterval(updateCart, 2000); alert("Error ending session."); }
+        
+        if (response.ok) { 
+            // Correct redirection
+            window.location.href = "/success"; 
+        } else { 
+            cartInterval = setInterval(updateCart, 2000);
+            securityInterval = setInterval(checkSecurity, 2500);
+            alert("Error ending session."); 
+        }
     }
 }
 

@@ -1,5 +1,7 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 import mysql.connector
+import random
+from functools import wraps
 
 app = Flask(__name__)
 
@@ -13,12 +15,42 @@ db_config = {
 }
 
 # In-memory storage for security flags
-pending_placement = {} 
-pending_removal = {} # Added for removal tracking
-security_alerts = {} # Added for popup tracking
+pending_placement = {}
+pending_removal = {}
+security_alerts = {}
+# Added to track the weight of the item currently being scanned/removed
+expected_weight_change = {} 
 
 def get_db_connection():
     return mysql.connector.connect(**db_config)
+
+# --- PIN HELPER ---
+def generate_pin():
+    return str(random.randint(1000, 9999))
+
+# --- NETWORK SECURITY ---
+ALLOWED_NETWORKS = [
+    "192.168.1.",
+    "127.0.0.1",
+]
+
+def is_allowed_network():
+    client_ip = request.remote_addr
+    for network in ALLOWED_NETWORKS:
+        if client_ip.startswith(network):
+            return True
+    return False
+
+def store_network_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not is_allowed_network():
+            return render_template(
+                '403.html',
+                client_ip=request.remote_addr
+            ), 403
+        return f(*args, **kwargs)
+    return decorated
 
 # --- PAGE ROUTES ---
 
@@ -27,31 +59,91 @@ def landing_page():
     return render_template('landing.html')
 
 @app.route('/start')
+@store_network_required
 def auto_assign_cart():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         query = """
-            SELECT c.cart_label 
+            SELECT c.cart_label, c.cart_id
             FROM CART c
-            LEFT JOIN SHOPPING_SESSION s ON c.cart_id = s.cart_id AND s.status = 'active'
+            LEFT JOIN SHOPPING_SESSION s 
+            ON c.cart_id = s.cart_id 
+            AND s.status = 'active'
             WHERE s.session_id IS NULL
             ORDER BY c.cart_label ASC
             LIMIT 1
         """
         cursor.execute(query)
         available_cart = cursor.fetchone()
-        conn.close()
 
         if available_cart:
-            return redirect(url_for('show_cart', label=available_cart['cart_label']))
-        else:
-            return "<h1>All carts are currently in use. Please wait for a moment!</h1>", 200
+            pin = generate_pin()
+            print("\n" + "="*40)
+            print(f"DEBUG: Generated PIN for Cart {available_cart['cart_label']} is: {pin}")
+            print("="*40 + "\n")
             
+            cursor.execute("""
+                UPDATE CART SET pin = %s 
+                WHERE cart_id = %s
+            """, (pin, available_cart['cart_id']))
+            conn.commit()
+            conn.close()
+
+            return redirect(url_for(
+                'pin_page',
+                label=available_cart['cart_label']
+            ))
+        else:
+            conn.close()
+            return "<h1>All carts are currently in use!</h1>", 200
+
     except Exception as e:
         return f"System Error: {str(e)}"
 
+@app.route('/pin/<label>')
+@store_network_required 
+def pin_page(label):
+    return render_template('pin.html', cart_label=label)
+
+@app.route('/verify_pin', methods=['POST'])
+@store_network_required
+def verify_pin():
+    data = request.json
+    label = data.get('cart_label')
+    entered_pin = data.get('pin')
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("SELECT cart_id, pin FROM CART WHERE cart_label = %s", (label,))
+        cart = cursor.fetchone()
+
+        if cart and cart['pin'] == entered_pin:
+            cursor.execute("""
+                SELECT session_id FROM SHOPPING_SESSION 
+                WHERE cart_id = %s AND status = 'active'
+            """, (cart['cart_id'],))
+            existing_session = cursor.fetchone()
+
+            if not existing_session:
+                cursor.execute("""
+                    INSERT INTO SHOPPING_SESSION (cart_id, status, total_cost) 
+                    VALUES (%s, 'active', 0)
+                """, (cart['cart_id'],))
+                conn.commit()
+
+            conn.close()
+            return jsonify({'status': 'success'})
+        else:
+            conn.close()
+            return jsonify({'status': 'error', 'message': 'Wrong PIN!'}), 401
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/cart/<label>')
+@store_network_required
 def show_cart(label):
     return render_template('cart.html', cart_label=label)
 
@@ -83,9 +175,13 @@ def all_carts_status():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         query = """
-            SELECT c.cart_label, IFNULL(s.status, 'idle') as status, IFNULL(s.total_cost, 0) as total_cost
+            SELECT c.cart_label, 
+            IFNULL(s.status, 'idle') as status, 
+            IFNULL(s.total_cost, 0) as total_cost
             FROM CART c
-            LEFT JOIN SHOPPING_SESSION s ON c.cart_id = s.cart_id AND s.status = 'active'
+            LEFT JOIN SHOPPING_SESSION s 
+            ON c.cart_id = s.cart_id 
+            AND s.status = 'active'
             ORDER BY c.cart_label ASC
         """
         cursor.execute(query)
@@ -100,7 +196,12 @@ def reset_everything():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE SHOPPING_SESSION SET status = 'completed' WHERE status = 'active'")
+        cursor.execute("""
+            UPDATE SHOPPING_SESSION 
+            SET status = 'completed' 
+            WHERE status = 'active'
+        """)
+        cursor.execute("UPDATE CART SET pin = NULL")
         conn.commit()
         conn.close()
         return jsonify({"status": "success"})
@@ -113,12 +214,17 @@ def get_cart_data(label):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         query = """
-            SELECT p.name, p.unit_price, b.quantity, p.barcode 
+            SELECT p.name, p.unit_price, 
+            b.quantity, p.barcode 
             FROM CART_ITEM_BRIDGE b 
-            JOIN PRODUCT p ON b.product_id = p.product_id 
-            JOIN SHOPPING_SESSION s ON b.session_id = s.session_id
-            JOIN CART c ON s.cart_id = c.cart_id
-            WHERE c.cart_label = %s AND s.status = 'active'
+            JOIN PRODUCT p 
+            ON b.product_id = p.product_id 
+            JOIN SHOPPING_SESSION s 
+            ON b.session_id = s.session_id
+            JOIN CART c 
+            ON s.cart_id = c.cart_id
+            WHERE c.cart_label = %s 
+            AND s.status = 'active'
         """
         cursor.execute(query, (label,))
         items = cursor.fetchall()
@@ -137,7 +243,12 @@ def end_session(label):
             UPDATE SHOPPING_SESSION s
             JOIN CART c ON s.cart_id = c.cart_id
             SET s.status = 'completed'
-            WHERE c.cart_label = %s AND s.status = 'active'
+            WHERE c.cart_label = %s 
+            AND s.status = 'active'
+        """, (label,))
+        cursor.execute("""
+            UPDATE CART SET pin = NULL 
+            WHERE cart_label = %s
         """, (label,))
         conn.commit()
         conn.close()
@@ -151,8 +262,20 @@ def update_product():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        query = "UPDATE PRODUCT SET unit_price = %s, stock_quantity = %s, weight = %s WHERE product_id = %s"
-        cursor.execute(query, (data['price'], data['stock'], data['weight'], data['id']))
+        query = """
+            UPDATE PRODUCT 
+            SET name = %s, barcode = %s, unit_price = %s, 
+            stock_quantity = %s, weight = %s 
+            WHERE product_id = %s
+        """
+        cursor.execute(query, (
+            data['name'],
+            data['barcode'],
+            data['price'],
+            data['stock'],
+            data['weight'],
+            data['id']
+        ))
         conn.commit()
         conn.close()
         return jsonify({"status": "success"})
@@ -198,14 +321,34 @@ def get_product_info(barcode):
         conn.close()
         if product:
             return jsonify({
-                "status": "success", 
-                "name": product['name'], 
+                "status": "success",
+                "name": product['name'],
                 "price": product['unit_price'],
                 "weight": product['weight']
             })
         return jsonify({"status": "error", "message": "Product not found"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+# --- UPDATE IN app.py ---
+
+@app.route('/api/get_pin/<label>')
+def get_pin(label):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        # Ensure the label matches exactly what the ESP32 sends (e.g., "A1")
+        cursor.execute("SELECT pin FROM CART WHERE cart_label = %s", (label,))
+        cart = cursor.fetchone()
+        conn.close()
+        
+        if cart and cart['pin']:
+            return jsonify({'pin': cart['pin']})
+        else:
+            # Explicitly tell the ESP32 that the PIN isn't ready
+            return jsonify({'pin': "WAIT"}) 
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/scan', methods=['POST'])
 def scan_item():
@@ -214,32 +357,29 @@ def scan_item():
     label = data.get('cart_label')
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    
-    cursor.execute("SELECT product_id, unit_price, stock_quantity FROM PRODUCT WHERE barcode = %s", (barcode,))
+
+    # Added 'weight' to the query so we can send it to the threshold logic
+    cursor.execute("SELECT product_id, unit_price, stock_quantity, weight FROM PRODUCT WHERE barcode = %s", (barcode,))
     product = cursor.fetchone()
 
     if not product:
         conn.close()
         return jsonify({"status": "error", "message": "Product barcode not found"}), 404
-    
+
     if product['stock_quantity'] <= 0:
         conn.close()
         return jsonify({"status": "error", "message": "Out of stock"}), 400
 
     cursor.execute("""
-        SELECT s.session_id FROM SHOPPING_SESSION s 
-        JOIN CART c ON s.cart_id = c.cart_id 
+        SELECT s.session_id FROM SHOPPING_SESSION s
+        JOIN CART c ON s.cart_id = c.cart_id
         WHERE c.cart_label = %s AND s.status = 'active'
     """, (label,))
     session = cursor.fetchone()
-    
+
     if not session:
         cursor.execute("SELECT cart_id FROM CART WHERE cart_label = %s", (label,))
         cart_row = cursor.fetchone()
-        if not cart_row:
-            conn.close()
-            return jsonify({"status": "error", "message": "Cart label does not exist"}), 404
-            
         cursor.execute("INSERT INTO SHOPPING_SESSION (cart_id, status, total_cost) VALUES (%s, 'active', 0)", (cart_row['cart_id'],))
         conn.commit()
         session_id = cursor.lastrowid
@@ -247,23 +387,20 @@ def scan_item():
         session_id = session['session_id']
 
     cursor.execute("""
-        INSERT INTO CART_ITEM_BRIDGE (session_id, product_id, quantity) 
-        VALUES (%s, %s, 1) 
-        ON DUPLICATE KEY UPDATE quantity = quantity + 1
+        INSERT INTO CART_ITEM_BRIDGE (session_id, product_id, quantity)
+        VALUES (%s, %s, 1) ON DUPLICATE KEY UPDATE quantity = quantity + 1
     """, (session_id, product['product_id']))
-    
-    cursor.execute("UPDATE SHOPPING_SESSION SET total_cost = total_cost + %s WHERE session_id = %s", 
-                   (product['unit_price'], session_id))
-    
+
+    cursor.execute("UPDATE SHOPPING_SESSION SET total_cost = total_cost + %s WHERE session_id = %s", (product['unit_price'], session_id))
     cursor.execute("UPDATE PRODUCT SET stock_quantity = stock_quantity - 1 WHERE product_id = %s", (product['product_id'],))
-    
+
     pending_placement[label] = True
+    # Store the item's weight to calculate threshold later
+    expected_weight_change[label] = product['weight'] 
 
     conn.commit()
     conn.close()
     return jsonify({"status": "success", "message": f"Barcode {barcode} added"})
-
-# --- NEW SECURITY ROUTES ---
 
 @app.route('/api/remove_item', methods=['POST'])
 def remove_item():
@@ -272,12 +409,13 @@ def remove_item():
     label = data.get('cart_label')
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    
-    cursor.execute("SELECT product_id, unit_price FROM PRODUCT WHERE barcode = %s", (barcode,))
+
+    cursor.execute("SELECT product_id, unit_price, weight FROM PRODUCT WHERE barcode = %s", (barcode,))
     product = cursor.fetchone()
-    
+
     cursor.execute("""
-        SELECT s.session_id FROM SHOPPING_SESSION s JOIN CART c ON s.cart_id = c.cart_id 
+        SELECT s.session_id FROM SHOPPING_SESSION s 
+        JOIN CART c ON s.cart_id = c.cart_id
         WHERE c.cart_label = %s AND s.status = 'active'
     """, (label,))
     session = cursor.fetchone()
@@ -286,7 +424,11 @@ def remove_item():
         cursor.execute("UPDATE CART_ITEM_BRIDGE SET quantity = quantity - 1 WHERE session_id = %s AND product_id = %s", (session['session_id'], product['product_id']))
         cursor.execute("DELETE FROM CART_ITEM_BRIDGE WHERE quantity <= 0")
         cursor.execute("UPDATE SHOPPING_SESSION SET total_cost = total_cost - %s WHERE session_id = %s", (product['unit_price'], session['session_id']))
-        pending_removal[label] = True # Alert ESP32 to expect a removal
+        
+        pending_removal[label] = True
+        # Store the item's weight to calculate removal threshold
+        expected_weight_change[label] = product['weight']
+
         conn.commit()
         conn.close()
         return jsonify({"status": "success"})
@@ -310,21 +452,25 @@ def clear_alert(label):
 @app.route('/api/confirm_removal/<label>', methods=['POST'])
 def confirm_removal(label):
     pending_removal[label] = False
+    expected_weight_change[label] = 0.0 # Clear tracking
     return jsonify({"status": "verified"})
 
 @app.route('/api/confirm_placement/<label>', methods=['POST'])
 def confirm_placement(label):
     pending_placement[label] = False
+    expected_weight_change[label] = 0.0 # Clear tracking
     return jsonify({"status": "verified"})
 
-# --- OPTIMIZED SUPER ROUTE ---
 @app.route('/api/cart_update/<label>')
 def cart_update(label):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        query = "SELECT s.status FROM SHOPPING_SESSION s JOIN CART c ON s.cart_id = c.cart_id WHERE c.cart_label = %s AND s.status = 'active' LIMIT 1"
-        cursor.execute(query, (label,))
+        cursor.execute("""
+            SELECT s.status FROM SHOPPING_SESSION s 
+            JOIN CART c ON s.cart_id = c.cart_id
+            WHERE c.cart_label = %s AND s.status = 'active' LIMIT 1
+        """, (label,))
         row = cursor.fetchone()
         conn.close()
 
@@ -336,10 +482,21 @@ def cart_update(label):
             session_status = "idle"
             is_pending = False
             is_removing = False
-            
-        return f"{session_status}|{str(is_pending).lower()}|{str(is_removing).lower()}"
+
+        # --- DYNAMIC 5% THRESHOLD LOGIC ---
+        # If an item is being added/removed, threshold = 30g base + 5% of item weight
+        # If cart is idle, use a base drift threshold of 35g
+        item_w = expected_weight_change.get(label, 0.0)
+        
+        if is_pending or is_removing:
+            threshold = 30.0 + (abs(item_w) * 0.05)
+        else:
+            threshold = 35.0
+
+        # Return status|pending|removing|threshold
+        return f"{session_status}|{str(is_pending).lower()}|{str(is_removing).lower()}|{threshold:.1f}"
     except Exception as e:
-        return "error|false|false"
+        return "error|false|false|35.0"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5050, debug=True)
