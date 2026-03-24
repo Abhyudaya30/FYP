@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Cart - Smart Cart</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        .pin-container {
+            max-width: 400px;
+            margin: 100px auto;
+            text-align: center;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        /* --- REMOVE UP/DOWN ARROWS --- */
+        /* For Chrome, Safari, Edge, Opera */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        /* For Firefox */
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+        /* ----------------------------- */
+
+        .pin-input {
+            width: 80%;
+            font-size: 2rem;
+            letter-spacing: 10px;
+            text-align: center;
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            margin: 20px 0;
+            outline: none;
+        }
+        .pin-input:focus { border-color: #3b82f6; }
+        .verify-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 80%;
+        }
+        .verify-btn:hover { background: #2563eb; }
+        .cart-label-tag { font-weight: bold; color: #3b82f6; }
+    </style>
+</head>
+<body class="app-bg">
+    <div class="pin-container">
+        <h2>Enter Cart PIN</h2>
+        <p>Please enter the 4-digit PIN shown on the LCD of <span class="cart-label-tag">Cart {{ cart_label }}</span></p>
+        
+        <input type="number" id="pin-field" class="pin-input" placeholder="0000" 
+               inputmode="numeric"
+               oninput="if(this.value.length > 4) this.value = this.value.slice(0, 4);">
+        
+        <button class="verify-btn" onclick="checkPin()">Access Cart</button>
+        <p id="error-msg" style="color: #ef4444; margin-top: 15px; display: none;"></p>
+    </div>
+
+    <script>
+        async function checkPin() {
+            const pin = document.getElementById('pin-field').value;
+            const label = "{{ cart_label }}";
+            const errorEl = document.getElementById('error-msg');
+
+            if (pin.length !== 4) {
+                errorEl.textContent = "Please enter a 4-digit PIN.";
+                errorEl.style.display = "block";
+                return;
+            }
+
+            const response = await fetch('/verify_pin', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ cart_label: label, pin: pin })
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                window.location.href = `/cart/${label}`;
+            } else {
+                errorEl.textContent = result.message || "Incorrect PIN. Try again.";
+                errorEl.style.display = "block";
+                document.getElementById('pin-field').value = '';
+            }
+        }
+    </script>
+</body>
+</html>
