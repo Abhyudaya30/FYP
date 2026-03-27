@@ -27,18 +27,21 @@
             let htmlString = "";
             carts.forEach(c => {
                 const isActive = (c.status === 'active');
+                const waitingForCashier = isActive && c.checkout_requested;
+                const statusLabel = waitingForCashier ? 'Awaiting Cashier' : (isActive ? 'Busy' : 'Idle');
                 htmlString += `
                     <div class="card ${isActive ? 'active' : ''}">
                         <div class="cart-title">CART ${c.cart_label}</div>
                         <span class="status-tag ${isActive ? 'status-active' : 'status-idle'}">
-                            ${isActive ? 'Busy' : 'Idle'}
+                            ${statusLabel}
                         </span>
                         <div class="price-display">Rs. ${c.total_cost}</div>
+                        <p style="margin:10px 0 0; color:#444; font-weight:600;">PIN: ${c.pin || 'WAIT'}</p>
                         
                         ${isActive ? `
                             <button class="btn-main" onclick="window.location.href='/cart/${c.cart_label}'">Open Bill</button>
-                            <button class="btn-reset-single" onclick="resetSingleCart('${c.cart_label}')">Reset This Cart</button>
-                        ` : '<p style="color:#999; margin-top:20px;">Ready for customer</p>'}
+                            <button class="btn-reset-single" onclick="resetSingleCart('${c.cart_label}')">${waitingForCashier ? 'Approve & End Session' : 'End Session'}</button>
+                        ` : '<p style="color:#999; margin-top:20px;">Available for new customer</p>'}
                     </div>
                 `;
             });
@@ -49,7 +52,10 @@
     // Function to reset just ONE cart
     async function resetSingleCart(label) {
         if(confirm(`End session for Cart ${label}?`)) {
-            const res = await fetch(`/api/end_session/${label}`, { method: 'POST' });
+            const res = await fetch(`/api/end_session/${label}`, {
+                method: 'POST',
+                headers: { 'X-Cashier-Action': 'true' }
+            });
             const data = await res.json();
             if(data.status === 'success') {
                 refreshDashboard();
@@ -60,7 +66,10 @@
     // Function for Global Reset
     async function triggerGlobalReset() {
         if(confirm("Complete ALL active sessions?")) {
-            await fetch('/api/reset_everything', { method: 'POST' });
+            await fetch('/api/reset_everything', {
+                method: 'POST',
+                headers: { 'X-Cashier-Action': 'true' }
+            });
             refreshDashboard();
         }
     }

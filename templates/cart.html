@@ -5,7 +5,7 @@
   <title>Smart Cart - Live Bill</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body class="app-bg">
   <div class="app-shell">
@@ -30,6 +30,10 @@
 
           <div class="scanner-viewport">
             <div id="reader" style="width:100%;"></div>
+            <button id="startCameraBtn"
+                    style="display:none; position:absolute; inset:0; margin:auto; width:80%; max-width:260px; height:48px; border:none; border-radius:12px; background:#111827; color:#fff; font-weight:700; cursor:pointer;">
+              Tap to enable camera
+            </button>
           </div>
 
           <div class="scanner-status-bar">
