@@ -18,6 +18,7 @@ const int LOADCELL_SCK_PIN = 21;
 const int BUZZER_PIN = 5;
 const int I2C_SDA_PIN = 8;
 const int I2C_SCL_PIN = 9;
+const int BUZZER_CHANNEL = 0;
 const int BUZZER_FREQUENCY = 2400;
 const int BUZZER_RESOLUTION = 8;
 
@@ -28,14 +29,14 @@ WiFiClientSecure tlsClient;
 
 // --- WEIGHT CONFIG ---
 float calibrationFactor = 114.2f;
-const float NOISE_BAND = 1.5f;
-const float EMPTY_CART_BAND = 5.0f;
-const float NEGATIVE_TARE_THRESHOLD = -2.5f;
+const float MICRO_SPIKE_BAND = 3.0f;
+const float EMPTY_CART_BAND = 10.0f;
+const float NEGATIVE_TARE_THRESHOLD = -0.5f;
 const float UNVERIFIED_RISE_THRESHOLD = 20.0f;
+const float UNVERIFIED_DROP_THRESHOLD = 20.0f;
 const float PRODUCT_WEIGHT_TOLERANCE = 0.10f;  // 10%
 const float RANGE_EXIT_GRACE = 3.0f;
-const float WEIGHT_SMOOTHING_ALPHA = 0.18f;
-const int WEIGHT_SAMPLE_COUNT = 8;
+const int WEIGHT_SAMPLE_COUNT = 3;
 
 // --- TIMINGS ---
 const unsigned long UPDATE_INTERVAL_MS = 350;
@@ -48,9 +49,9 @@ const unsigned long SECURITY_RISE_HOLD_MS = 900;
 
 // --- RUNTIME STATE ---
 float currentWeight = 0.0f;
-float filteredWeight = 0.0f;
 float baselineWeight = 0.0f;
 float expectedWeight = 0.0f;
+float totalCost = 0.0f;
 
 String currentPin = "WAIT";
 String cartStatus = "idle";
@@ -58,6 +59,8 @@ String cartStatus = "idle";
 bool pendingPlacement = false;
 bool pendingRemoval = false;
 bool securityAlertRaised = false;
+bool checkoutPending = false;
+bool buzzerReady = false;
 
 unsigned long lastUpdate = 0;
 unsigned long lastPinFetch = 0;
@@ -69,9 +72,16 @@ unsigned long removalStableStart = 0;
 unsigned long unverifiedRiseStart = 0;
 
 void beep(int durationMs) {
-    ledcWriteTone(BUZZER_PIN, BUZZER_FREQUENCY);
+    if (buzzerReady) {
+        ledcWriteTone(BUZZER_PIN, BUZZER_FREQUENCY);
+        delay(durationMs);
+        ledcWriteTone(BUZZER_PIN, 0);
+        return;
+    }
+
+    digitalWrite(BUZZER_PIN, HIGH);
     delay(durationMs);
-    ledcWriteTone(BUZZER_PIN, 0);
+    digitalWrite(BUZZER_PIN, LOW);
 }
 
 void lcdPrint(const String& line1, const String& line2) {
@@ -85,7 +95,6 @@ void lcdPrint(const String& line1, const String& line2) {
 void resetScaleTracking() {
     baselineWeight = 0.0f;
     currentWeight = 0.0f;
-    filteredWeight = 0.0f;
     negativeWeightStart = 0;
     emptyCartStart = millis();
     placementStableStart = 0;
@@ -190,6 +199,8 @@ void syncHardwareState() {
     bool newPendingRemoval = doc["pending_removal"] | false;
     float newExpectedWeight = doc["expected_weight_change"] | 0.0f;
     String newStatus = doc["status"] | "idle";
+    bool newCheckoutPending = doc["checkout_requested"] | false;
+    float newTotalCost = doc["total_cost"] | 0.0f;
 
     bool placementStarted = newPendingPlacement && !pendingPlacement;
     bool removalStarted = newPendingRemoval && !pendingRemoval;
@@ -198,6 +209,8 @@ void syncHardwareState() {
     pendingRemoval = newPendingRemoval;
     expectedWeight = newExpectedWeight;
     cartStatus = newStatus;
+    checkoutPending = newCheckoutPending;
+    totalCost = newTotalCost;
 
     if (placementStarted || removalStarted) {
         baselineWeight = currentWeight;
@@ -235,10 +248,13 @@ void confirmRemoval() {
 
 void triggerSecurityAlert() {
     lcdPrint("Security alert", "Unknown item");
-    for (int i = 0; i < 3; i++) {
-        beep(100);
-        delay(50);
-    }
+    beep(5000);
+    postEmptyJson("/api/report_alert/" + CART_LABEL);
+}
+
+void triggerRemovalAlert() {
+    lcdPrint("Security alert", "Item removed");
+    beep(5000);
     postEmptyJson("/api/report_alert/" + CART_LABEL);
 }
 
@@ -282,22 +298,15 @@ void handleLocalScan(const String& barcode) {
 void readWeight() {
     if (!scale.is_ready()) return;
 
-    float rawWeight = scale.get_units(WEIGHT_SAMPLE_COUNT);
+    float stableWeight = scale.get_units(WEIGHT_SAMPLE_COUNT);
 
-    // Smooth the HX711 output so brief electrical noise and Wi-Fi activity
-    // do not cause large weight jumps on the cart UI.
-    if (filteredWeight == 0.0f && fabsf(rawWeight) > NOISE_BAND) {
-        filteredWeight = rawWeight;
-    } else {
-        filteredWeight = (WEIGHT_SMOOTHING_ALPHA * rawWeight) +
-                         ((1.0f - WEIGHT_SMOOTHING_ALPHA) * filteredWeight);
+    // Ignore brief micro-spikes from vibration/electrical noise, but keep
+    // the full reading path for real placement/removal workflows.
+    if (fabsf(stableWeight) <= MICRO_SPIKE_BAND) {
+        stableWeight = 0.0f;
     }
 
-    if (filteredWeight > -NOISE_BAND && filteredWeight < NOISE_BAND) {
-        filteredWeight = 0.0f;
-    }
-
-    currentWeight = filteredWeight;
+    currentWeight = stableWeight;
 }
 
 void handleNegativeAutoTare() {
@@ -383,6 +392,13 @@ void evaluateWeightSecurity() {
         return;
     }
 
+    if (checkoutPending) {
+        if (fabsf(currentWeight) <= EMPTY_CART_BAND) {
+            securityAlertRaised = false;
+        }
+        return;
+    }
+
     if (delta > UNVERIFIED_RISE_THRESHOLD && !securityAlertRaised) {
         if (unverifiedRiseStart == 0) {
             unverifiedRiseStart = millis();
@@ -390,6 +406,17 @@ void evaluateWeightSecurity() {
 
         if (millis() - unverifiedRiseStart >= SECURITY_RISE_HOLD_MS) {
             triggerSecurityAlert();
+            securityAlertRaised = true;
+            baselineWeight = currentWeight;
+            unverifiedRiseStart = 0;
+        }
+    } else if (delta < -UNVERIFIED_DROP_THRESHOLD && !securityAlertRaised) {
+        if (unverifiedRiseStart == 0) {
+            unverifiedRiseStart = millis();
+        }
+
+        if (millis() - unverifiedRiseStart >= SECURITY_RISE_HOLD_MS) {
+            triggerRemovalAlert();
             securityAlertRaised = true;
             baselineWeight = currentWeight;
             unverifiedRiseStart = 0;
@@ -419,16 +446,22 @@ void renderStatus() {
         return;
     }
 
+    if (checkoutPending) {
+        lcdPrint("Head to cashier", "Total Rs " + String(totalCost, 0));
+        return;
+    }
+
+    if (millis() - lastPinFetch >= PIN_FETCH_INTERVAL_MS) {
+        fetchPin();
+        lastPinFetch = millis();
+    }
+
     if (cartStatus == "idle") {
-        if (millis() - lastPinFetch >= PIN_FETCH_INTERVAL_MS) {
-            fetchPin();
-            lastPinFetch = millis();
-        }
         lcdPrint("Cart " + CART_LABEL + " ready", "PIN " + currentPin);
         return;
     }
 
-    lcdPrint("Weight " + String(currentWeight, 1) + "g", "Scan next item");
+    lcdPrint("Weight " + String(currentWeight, 1) + "g", "PIN " + currentPin);
 }
 
 void setup() {
@@ -437,8 +470,11 @@ void setup() {
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
 
     pinMode(BUZZER_PIN, OUTPUT);
-    ledcAttach(BUZZER_PIN, BUZZER_FREQUENCY, BUZZER_RESOLUTION);
-    ledcWriteTone(BUZZER_PIN, 0);
+    digitalWrite(BUZZER_PIN, LOW);
+    buzzerReady = ledcAttachChannel(BUZZER_PIN, BUZZER_FREQUENCY, BUZZER_RESOLUTION, BUZZER_CHANNEL);
+    if (buzzerReady) {
+        ledcWriteTone(BUZZER_PIN, 0);
+    }
 
     lcd.init();
     lcd.backlight();
@@ -452,6 +488,8 @@ void setup() {
 
     beep(100);
     connectWiFi();
+    fetchPin();
+    lastPinFetch = millis();
     lcdPrint("WiFi connected", "Weight in grams");
     delay(1000);
 }

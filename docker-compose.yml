@@ -16,6 +16,14 @@ services:
       - smartcart_db_data:/var/lib/mysql
       - ./db-init.sql:/docker-entrypoint-initdb.d/db-init.sql:ro
 
+  adminer:
+    image: adminer:latest
+    container_name: smartcart-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mariadb
+
 volumes:
   smartcart_db_data:
-

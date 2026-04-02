@@ -577,11 +577,21 @@ def hardware_state(label):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         session = active_session_for_label(cursor, label)
+        total_cost = 0.0
+        if session:
+            cursor.execute(
+                "SELECT total_cost FROM SHOPPING_SESSION WHERE session_id = %s",
+                (session["session_id"],),
+            )
+            total_row = cursor.fetchone()
+            total_cost = float(total_row["total_cost"] or 0.0) if total_row else 0.0
         conn.close()
         state = hw_state(label)
         return jsonify(
             {
                 "status": session["status"] if session else "idle",
+                "checkout_requested": checkout_requested(label),
+                "total_cost": total_cost,
                 "pending_placement": state["pending_placement"],
                 "pending_removal": state["pending_removal"],
                 "expected_weight_change": state["expected_weight_change"],
@@ -592,6 +602,8 @@ def hardware_state(label):
         return jsonify(
             {
                 "status": "error",
+                "checkout_requested": False,
+                "total_cost": 0.0,
                 "pending_placement": False,
                 "pending_removal": False,
                 "expected_weight_change": 0.0,
