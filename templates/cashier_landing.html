@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cashier Access - Smart Cart</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="app-bg">
+    <div class="app-shell center-content">
+        <div class="hero-section">
+            <div class="logo-circle">💳</div>
+            <h1 class="top-title">Cashier Checkout</h1>
+            <p class="section-subtitle">Monitor carts and approve checkout sessions.</p>
+        </div>
+
+        <div class="content">
+            <div class="instruction-card">
+                View active carts, check totals, and end sessions after payment.
+            </div>
+
+            {% if login_error %}
+            <div class="auth-error">{{ login_error }}</div>
+            {% endif %}
+
+            <form class="auth-card" method="POST" action="/cashier">
+                <label class="auth-label" for="username">Username</label>
+                <input class="auth-input" type="text" id="username" name="username" placeholder="Enter username" required>
+
+                <label class="auth-label" for="password">Password</label>
+                <input class="auth-input" type="password" id="password" name="password" placeholder="Enter password" required>
+
+                <button class="primary-btn wide-btn" type="submit">Login to Cashier</button>
+            </form>
+
+            <p class="auth-note">Use Admin / Password123</p>
+        </div>
+    </div>
+</body>
+</html>

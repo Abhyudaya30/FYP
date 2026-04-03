@@ -1,8 +1,9 @@
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 import mysql.connector
 import random
 
 app = Flask(__name__)
+app.secret_key = "smartcart-secret-key"
 
 db_config = {
     "host": "127.0.0.1",
@@ -11,6 +12,9 @@ db_config = {
     "password": "smartcartpass",
     "database": "smart_cart_system",
 }
+
+AUTH_USERNAME = "Admin"
+AUTH_PASSWORD = "Password123"
 
 # In-memory bridge between web + hardware validation
 pending_placement = {}
@@ -84,6 +88,46 @@ def landing_page():
     return render_template("landing.html")
 
 
+@app.route("/cashier")
+def cashier_landing_page():
+    if session.get("cashier_authenticated"):
+        return redirect(url_for("cashier_page"))
+    return render_template("cashier_landing.html", login_error=None)
+
+
+@app.route("/cashier", methods=["POST"])
+def cashier_login():
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    if username == AUTH_USERNAME and password == AUTH_PASSWORD:
+        session["cashier_authenticated"] = True
+        return redirect(url_for("cashier_page"))
+    return render_template(
+        "cashier_landing.html",
+        login_error="Invalid username or password.",
+    ), 401
+
+
+@app.route("/admin/inventory")
+def inventory_landing_page():
+    if session.get("inventory_authenticated"):
+        return redirect(url_for("admin_inventory"))
+    return render_template("inventory_landing.html", login_error=None)
+
+
+@app.route("/admin/inventory", methods=["POST"])
+def inventory_login():
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    if username == AUTH_USERNAME and password == AUTH_PASSWORD:
+        session["inventory_authenticated"] = True
+        return redirect(url_for("admin_inventory"))
+    return render_template(
+        "inventory_landing.html",
+        login_error="Invalid username or password.",
+    ), 401
+
+
 @app.route("/start")
 def auto_assign_cart():
     try:
@@ -132,8 +176,15 @@ def show_cart(label):
     return render_template("cart.html", cart_label=label)
 
 
-@app.route("/cashier")
+@app.route("/bill/<label>")
+def show_bill(label):
+    return render_template("bill.html", cart_label=label)
+
+
+@app.route("/cashier/dashboard")
 def cashier_page():
+    if not session.get("cashier_authenticated"):
+        return redirect(url_for("cashier_landing_page"))
     return render_template("cashier.html")
 
 
@@ -142,8 +193,10 @@ def success_page():
     return render_template("success.html", cart_label=request.args.get("label", ""))
 
 
-@app.route("/admin/inventory")
+@app.route("/admin/inventory/dashboard")
 def admin_inventory():
+    if not session.get("inventory_authenticated"):
+        return redirect(url_for("inventory_landing_page"))
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)

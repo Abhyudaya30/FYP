@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cashier Bill View - Cart #{{ cart_label }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="app-bg">
+  <div class="app-shell" style="max-width: 600px; margin: 40px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+    <header class="top-bar" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">
+      <h1 class="top-title" style="margin: 0; font-size: 1.5rem; color: #333;">Bill for Cart #<span id="displayCartLabel">{{ cart_label }}</span></h1>
+      <button style="background: #4f46e5; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;" onclick="window.location.href='/cashier/dashboard'">Back to Dashboard</button>
+    </header>
+
+    <main class="content">
+      <section class="cart-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h2 class="section-title" style="margin: 0; font-size: 1.2rem; color: #555;">Purchased Items</h2>
+        <span class="item-count-pill" id="itemCount" style="background: #e0e7ff; color: #4338ca; padding: 4px 10px; border-radius: 20px; font-weight: bold; font-size: 0.9rem;">0 items</span>
+      </section>
+
+      <section class="cart-list" id="cartList" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 25px;">
+        <!-- Items will be injected here via JS -->
+      </section>
+
+      <section class="summary-card" style="background: #f8f9fa; padding: 20px; border-radius: 10px; border: 1px solid #eee;">
+        <div class="summary-row" style="display: flex; justify-content: space-between; font-size: 1.1rem; margin-bottom: 10px;">
+          <span style="color: #666;">Subtotal</span>
+          <span id="summarySubtotal" style="font-weight: bold; color: #333;">Rs. 0</span>
+        </div>
+        <div class="summary-row total-row" style="display: flex; justify-content: space-between; font-size: 1.4rem; font-weight: bold; color: #111; margin-top: 15px; padding-top: 15px; border-top: 2px dashed #ccc;">
+          <span>Total</span>
+          <span id="summaryTotal">Rs. 0</span>
+        </div>
+        
+        <div style="margin-top: 25px; display: flex; gap: 10px;">
+          <button class="primary-btn wide-btn" onclick="approveAndEndSession()" style="flex: 1; background: #28a745; color: white; border: none; padding: 15px; border-radius: 8px; font-size: 1.1rem; font-weight: bold; cursor: pointer;">
+            Approve Payment & Close
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const CART_LABEL = "{{ cart_label }}";
+
+    async function loadBillData() {
+        try {
+            const res = await fetch(`/api/get_cart/${CART_LABEL}`);
+            const data = await res.json();
+            
+            const listDiv = document.getElementById("cartList");
+            const subtotalSpan = document.getElementById("summarySubtotal");
+            const totalSpan = document.getElementById("summaryTotal");
+            const itemCount = document.getElementById("itemCount");
+            
+            if (data.items) {
+                let html = "";
+                let totalItems = 0;
+                data.items.forEach(item => {
+                    const lineTotal = item.unit_price * item.quantity;
+                    totalItems += item.quantity;
+                    html += `
+                        <div style="display: flex; justify-content: space-between; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff;">
+                            <div>
+                                <h4 style="margin: 0 0 5px 0; font-size: 1rem; color: #1f2937;">${item.name}</h4>
+                                <span style="font-size: 0.85rem; color: #6b7280;">Rs. ${item.unit_price} x ${item.quantity}</span>
+                            </div>
+                            <div style="font-weight: 600; color: #111;">
+                                Rs. ${lineTotal.toFixed(2)}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                if (data.items.length === 0) {
+                    html = '<p style="text-align:center; color:#888; padding: 20px;">Cart is empty.</p>';
+                }
+
+                listDiv.innerHTML = html;
+                subtotalSpan.innerText = `Rs. ${data.total.toFixed(2)}`;
+                totalSpan.innerText = `Rs. ${data.total.toFixed(2)}`;
+                itemCount.innerText = `${totalItems} items`;
+            }
+        } catch (err) {
+            console.error("Failed to load bill:", err);
+        }
+    }
+
+    async function approveAndEndSession() {
+        if(confirm(`Approve payment and end session for Cart ${CART_LABEL}?`)) {
+            try {
+                const res = await fetch(`/api/end_session/${CART_LABEL}`, {
+                    method: 'POST',
+                    headers: { 'X-Cashier-Action': 'true' }
+                });
+                const data = await res.json();
+                if(data.status === 'success') {
+                    window.location.href = '/cashier/dashboard';
+                } else {
+                    alert("Error: " + data.message);
+                }
+            } catch (err) {
+                alert("Failed to end session");
+                console.error(err);
+            }
+        }
+    }
+
+    // Auto-refresh the bill every 2 seconds to see live updates as customer shops
+    setInterval(loadBillData, 2000);
+    // Initial load
+    loadBillData();
+  </script>
+</body>
+</html>

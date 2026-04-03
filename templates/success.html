@@ -15,36 +15,92 @@
         </div>
 
         <div class="content">
-            <div class="instruction-card">
-                <p>Please show your <strong>Cart #{{ cart_label }}</strong> to the cashier and wait for approval before leaving.</p>
-                <p id="approval-status">Waiting for cashier approval...</p>
+            <div class="instruction-card" style="background:#e0f2f1; border: 1px solid #b2dfdb; border-radius: 12px; padding: 20px;">
+                <h2 style="color: #00796b; margin-top: 0; margin-bottom: 10px;">Please proceed to the counter</h2>
+                <p>Show your <strong>Cart #{{ cart_label }}</strong> to the cashier to pay and complete your session.</p>
+                <p id="approval-status" style="font-weight: bold; color: #d32f2f; margin-top: 10px;">Waiting for cashier approval...</p>
             </div>
+
+            <section class="summary-card" style="margin-top: 20px; text-align: left; padding: 20px;">
+                <h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Your Bill</h3>
+                <div class="cart-list" id="cartList" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; max-height: 250px; overflow-y: auto;">
+                    <!-- Items will be injected here -->
+                    <p style="color:#888; text-align:center;">Loading bill...</p>
+                </div>
+                <div class="summary-row">
+                    <span>Subtotal</span>
+                    <span id="summarySubtotal">Rs. 0</span>
+                </div>
+                <div class="summary-row total-row" style="border-top: 2px dashed #ccc; padding-top: 10px; margin-top: 10px;">
+                    <span>Total Payable</span>
+                    <span id="summaryTotal">Rs. 0</span>
+                </div>
+            </section>
         </div>
     </div>
     <script>
         const cartLabel = "{{ cart_label }}";
 
-        async function pollApproval() {
+        async function loadBillData() {
             if (!cartLabel) return;
-
             try {
-                const response = await fetch(`/api/hardware_state/${encodeURIComponent(cartLabel)}`);
-                const data = await response.json();
+                const res = await fetch(`/api/get_cart/${cartLabel}`);
+                const data = await res.json();
+                
+                const listDiv = document.getElementById("cartList");
+                const subtotalSpan = document.getElementById("summarySubtotal");
+                const totalSpan = document.getElementById("summaryTotal");
+                
+                if (data.items) {
+                    let html = "";
+                    data.items.forEach(item => {
+                        const lineTotal = item.unit_price * item.quantity;
+                        html += `
+                            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9;">
+                                <div>
+                                    <div style="font-weight: 500; color: #333;">${item.name}</div>
+                                    <div style="font-size: 0.85rem; color: #666;">Rs. ${item.unit_price} x ${item.quantity}</div>
+                                </div>
+                                <div style="font-weight: bold; color: #111;">Rs. ${lineTotal.toFixed(2)}</div>
+                            </div>
+                        `;
+                    });
+                    
+                    if (data.items.length === 0) {
+                        html = '<p style="text-align:center; color:#888;">Cart is empty.</p>';
+                    }
 
-                if (data.status === "idle") {
-                    window.location.href = "/";
-                    return;
+                    listDiv.innerHTML = html;
+                    subtotalSpan.innerText = `Rs. ${data.total.toFixed(2)}`;
+                    totalSpan.innerText = `Rs. ${data.total.toFixed(2)}`;
                 }
-
-                const statusEl = document.getElementById("approval-status");
-                if (statusEl) {
-                    statusEl.textContent = "Waiting for cashier approval...";
-                }
-            } catch (_) {}
+            } catch (err) {
+                console.error("Failed to load bill:", err);
+            }
         }
 
-        pollApproval();
-        setInterval(pollApproval, 2000);
+        async function checkStatus() {
+            try {
+                const res = await fetch('/api/all_carts_status');
+                const carts = await res.json();
+                const session = carts.find(c => c.cart_label === cartLabel);
+                
+                if (!session || session.status !== 'active') {
+                    window.location.href = '/';
+                    return;
+                }
+            } catch (err) {
+                console.error("Status check error", err);
+            }
+        }
+
+        async function initPage() {
+            loadBillData();
+            checkStatus();
+        }
+
+        initPage();
+        setInterval(initPage, 2000);
     </script>
 </body>
 </html>
