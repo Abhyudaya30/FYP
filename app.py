@@ -192,10 +192,6 @@ def update_admin_password(username, new_password):
         conn.close()
 
 
-def is_admin_authenticated():
-    return bool(session.get("cashier_authenticated") or session.get("inventory_authenticated"))
-
-
 # ------------------------- Pages -------------------------
 @app.route("/")
 def landing_page():
@@ -204,8 +200,7 @@ def landing_page():
 
 @app.route("/cashier")
 def cashier_landing_page():
-    if session.get("cashier_authenticated"):
-        return redirect(url_for("cashier_page"))
+    session.pop("cashier_authenticated", None)
     return render_template("cashier_landing.html", login_error=None)
 
 
@@ -225,8 +220,7 @@ def cashier_login():
 
 @app.route("/admin/inventory")
 def inventory_landing_page():
-    if session.get("inventory_authenticated"):
-        return redirect(url_for("admin_inventory"))
+    session.pop("inventory_authenticated", None)
     return render_template("inventory_landing.html", login_error=None)
 
 
@@ -246,9 +240,6 @@ def inventory_login():
 
 @app.route("/admin/change-password", methods=["GET", "POST"])
 def change_admin_password():
-    if not is_admin_authenticated():
-        return redirect(url_for("cashier_landing_page"))
-
     try:
         ensure_admin_account_exists()
     except Exception as e:
@@ -256,13 +247,17 @@ def change_admin_password():
 
     error = None
     success = None
+    username_value = DEFAULT_ADMIN_USERNAME
     if request.method == "POST":
-        username = session.get("auth_username") or DEFAULT_ADMIN_USERNAME
+        username = (request.form.get("username") or "").strip()
+        username_value = username
         old_password = request.form.get("old_password") or ""
         new_password = request.form.get("new_password") or ""
         confirm_password = request.form.get("confirm_password") or ""
 
-        if not verify_admin_credentials(username, old_password):
+        if not username:
+            error = "Username is required."
+        elif not verify_admin_credentials(username, old_password):
             error = "Old password is incorrect."
         elif new_password != confirm_password:
             error = "New password and confirm password do not match."
@@ -279,7 +274,7 @@ def change_admin_password():
 
     return render_template(
         "change_password.html",
-        auth_username=session.get("auth_username") or DEFAULT_ADMIN_USERNAME,
+        auth_username=username_value,
         error=error,
         success=success,
     )
@@ -342,6 +337,7 @@ def show_bill(label):
 def cashier_page():
     if not session.get("cashier_authenticated"):
         return redirect(url_for("cashier_landing_page"))
+    session.pop("cashier_authenticated", None)
     return render_template("cashier.html")
 
 
@@ -355,6 +351,7 @@ def admin_inventory():
     if not session.get("inventory_authenticated"):
         return redirect(url_for("inventory_landing_page"))
     try:
+        session.pop("inventory_authenticated", None)
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT * FROM PRODUCT ORDER BY product_id ASC")
