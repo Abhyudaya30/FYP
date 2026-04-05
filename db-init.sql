@@ -38,6 +38,16 @@ CREATE TABLE IF NOT EXISTS CART_ITEM_BRIDGE (
   FOREIGN KEY (product_id) REFERENCES PRODUCT(product_id)
 );
 
+CREATE TABLE IF NOT EXISTS ADMIN_ACCOUNT (
+  admin_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Initial admin row is auto-seeded by app.py on first login attempt if missing.
+
 INSERT INTO CART (mac_address, cart_label, pin)
 VALUES
   ('AA:BB:CC:DD:EE:01', '01', NULL),
@@ -49,16 +59,16 @@ ON DUPLICATE KEY UPDATE
 
 INSERT INTO PRODUCT (barcode, name, unit_price, expected_weight, stock_quantity, weight)
 VALUES
-  ('8904004400010', 'Marie Biscuits', 35.00, 120.00, 50, 120),
-  ('8904004400027', 'Parle-G Biscuits', 30.00, 100.00, 60, 100),
-  ('8904004400034', 'Tea Powder', 180.00, 250.00, 40, 250),
-  ('8904004400041', 'Sugar 1kg', 115.00, 1000.00, 35, 1000),
-  ('8904004400058', 'Basmati Rice 5kg', 780.00, 5000.00, 20, 5000),
-  ('8904004400065', 'Lentils (Masoor) 1kg', 165.00, 1000.00, 30, 1000),
-  ('8904004400072', 'Cooking Oil 1L', 240.00, 1000.00, 25, 1000),
-  ('8904004400089', 'Iodized Salt 1kg', 28.00, 1000.00, 45, 1000),
-  ('8904004400096', 'Instant Noodles Pack', 25.00, 80.00, 100, 80),
-  ('8904004400102', 'Milk Powder 500g', 420.00, 500.00, 18, 500)
+  ('7000001', 'Marie Biscuits', 35.00, 120.00, 50, 120),
+  ('7000002', 'Parle-G Biscuits', 30.00, 100.00, 60, 100),
+  ('7000003', 'Tea Powder', 180.00, 250.00, 40, 250),
+  ('7000004', 'Sugar 1kg', 115.00, 1000.00, 35, 1000),
+  ('7000005', 'Basmati Rice 5kg', 780.00, 5000.00, 20, 5000),
+  ('7000006', 'Lentils (Masoor) 1kg', 165.00, 1000.00, 30, 1000),
+  ('7000007', 'Cooking Oil 1L', 240.00, 1000.00, 25, 1000),
+  ('7000008', 'Iodized Salt 1kg', 28.00, 1000.00, 45, 1000),
+  ('7000009', 'Instant Noodles Pack', 25.00, 80.00, 100, 80),
+  ('7000010', 'Milk Powder 500g', 420.00, 500.00, 18, 500)
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   unit_price = VALUES(unit_price),

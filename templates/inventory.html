@@ -57,6 +57,7 @@
             <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                 <h1 class="top-title">Inventory Management</h1>
                 <div style="display: flex; align-items: center; gap: 15px;">
+                    <button style="background-color: #0f766e; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;" onclick="window.location.href='/admin/change-password'">Change Password</button>
                     <button style="background-color: #4f46e5; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;" onclick="window.location.href='/cashier/dashboard'">Switch to Cashier</button>
                     <span class="top-badge" style="background: #ef4444; color: white;">Inventory</span>
                 </div>
@@ -126,7 +127,8 @@
             const stock = document.getElementById(`stock-${id}`).value;
             const weight = document.getElementById(`weight-${id}`).value;
 
-            if(!name || !barcode) return alert("Fields cannot be empty!");
+            if (!name || !barcode) return alert("Fields cannot be empty!");
+            if (name.trim() === barcode.trim()) return alert("Product name and barcode cannot be the same.");
             
             const response = await fetch('/api/update_product', {
                 method: 'POST',
@@ -144,6 +146,9 @@
                 document.getElementById(`edit-btn-${id}`).style.display = 'inline-block';
                 document.getElementById(`save-btn-${id}`).style.display = 'none';
                 alert("Updated!");
+            } else {
+                const data = await response.json().catch(() => ({}));
+                alert(data.message || "Unable to update product.");
             }
         }
 
@@ -155,13 +160,19 @@
             const weight = document.getElementById('new-weight').value;
 
             if(!name || !barcode) return alert("Name and Barcode required!");
+            if (name.trim() === barcode.trim()) return alert("Product name and barcode cannot be the same.");
 
             const response = await fetch('/api/add_product', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ name, barcode, price, stock, weight })
             });
-            if (response.ok) location.reload();
+            if (response.ok) {
+                location.reload();
+            } else {
+                const data = await response.json().catch(() => ({}));
+                alert(data.message || "Unable to add product.");
+            }
         }
 
         async function deleteProduct(id) {

@@ -1,6 +1,8 @@
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 import mysql.connector
 import random
+import re
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 app.secret_key = "smartcart-secret-key"
@@ -13,8 +15,12 @@ db_config = {
     "database": "smart_cart_system",
 }
 
-AUTH_USERNAME = "Admin"
-AUTH_PASSWORD = "Password123"
+DEFAULT_ADMIN_USERNAME = "Admin"
+DEFAULT_ADMIN_PASSWORD = "Admin@123"
+
+PASSWORD_UPPERCASE_PATTERN = re.compile(r"[A-Z]")
+PASSWORD_DIGIT_PATTERN = re.compile(r"\d")
+PASSWORD_SYMBOL_PATTERN = re.compile(r"[^A-Za-z0-9]")
 
 # In-memory bridge between web + hardware validation
 pending_placement = {}
@@ -22,6 +28,8 @@ pending_removal = {}
 security_alerts = {}
 expected_weight_change = {}
 checkout_requests = {}
+
+BARCODE_PATTERN = re.compile(r"^\d{7}$")
 
 
 def get_db_connection():
@@ -58,6 +66,23 @@ def product_by_barcode(cursor, barcode):
     return cursor.fetchone()
 
 
+def is_valid_scan_barcode(barcode):
+    normalized_barcode = (barcode or "").strip()
+    return bool(BARCODE_PATTERN.fullmatch(normalized_barcode)), normalized_barcode
+
+
+def validate_product_identity(name, barcode):
+    normalized_name = (name or "").strip()
+    normalized_barcode = (barcode or "").strip()
+    if not normalized_name or not normalized_barcode:
+        return False, "Name and barcode are required."
+    if normalized_name == normalized_barcode:
+        return False, "Product name and barcode cannot be the same."
+    if not BARCODE_PATTERN.fullmatch(normalized_barcode):
+        return False, "Barcode must be 7 digits."
+    return True, None
+
+
 def set_hw_state(label, placement=None, removal=None, expected_weight=None, alert=None):
     if placement is not None:
         pending_placement[label] = bool(placement)
@@ -82,6 +107,95 @@ def checkout_requested(label):
     return checkout_requests.get(label, False)
 
 
+def ensure_admin_account_exists():
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ADMIN_ACCOUNT (
+                admin_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cursor.execute(
+            "SELECT admin_id FROM ADMIN_ACCOUNT WHERE username = %s LIMIT 1",
+            (DEFAULT_ADMIN_USERNAME,),
+        )
+        if not cursor.fetchone():
+            cursor.execute(
+                "INSERT INTO ADMIN_ACCOUNT (username, password_hash) VALUES (%s, %s)",
+                (
+                    DEFAULT_ADMIN_USERNAME,
+                    generate_password_hash(DEFAULT_ADMIN_PASSWORD),
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def validate_password_strength(password):
+    candidate = password or ""
+    if len(candidate) < 8:
+        return False, "Password must be at least 8 characters long."
+    if not PASSWORD_UPPERCASE_PATTERN.search(candidate):
+        return False, "Password must include at least one uppercase letter."
+    if not PASSWORD_DIGIT_PATTERN.search(candidate):
+        return False, "Password must include at least one number."
+    if not PASSWORD_SYMBOL_PATTERN.search(candidate):
+        return False, "Password must include at least one symbol."
+    return True, None
+
+
+def verify_admin_credentials(username, password):
+    normalized_username = (username or "").strip()
+    if not normalized_username:
+        return False
+
+    ensure_admin_account_exists()
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT password_hash FROM ADMIN_ACCOUNT WHERE username = %s LIMIT 1",
+            (normalized_username,),
+        )
+        user = cursor.fetchone()
+        if not user:
+            return False
+        return check_password_hash(user["password_hash"], password or "")
+    finally:
+        conn.close()
+
+
+def update_admin_password(username, new_password):
+    normalized_username = (username or "").strip()
+    if not normalized_username:
+        return False
+
+    ensure_admin_account_exists()
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE ADMIN_ACCOUNT SET password_hash = %s WHERE username = %s",
+            (generate_password_hash(new_password), normalized_username),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def is_admin_authenticated():
+    return bool(session.get("cashier_authenticated") or session.get("inventory_authenticated"))
+
+
 # ------------------------- Pages -------------------------
 @app.route("/")
 def landing_page():
@@ -99,8 +213,9 @@ def cashier_landing_page():
 def cashier_login():
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
-    if username == AUTH_USERNAME and password == AUTH_PASSWORD:
+    if verify_admin_credentials(username, password):
         session["cashier_authenticated"] = True
+        session["auth_username"] = username
         return redirect(url_for("cashier_page"))
     return render_template(
         "cashier_landing.html",
@@ -119,13 +234,55 @@ def inventory_landing_page():
 def inventory_login():
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
-    if username == AUTH_USERNAME and password == AUTH_PASSWORD:
+    if verify_admin_credentials(username, password):
         session["inventory_authenticated"] = True
+        session["auth_username"] = username
         return redirect(url_for("admin_inventory"))
     return render_template(
         "inventory_landing.html",
         login_error="Invalid username or password.",
     ), 401
+
+
+@app.route("/admin/change-password", methods=["GET", "POST"])
+def change_admin_password():
+    if not is_admin_authenticated():
+        return redirect(url_for("cashier_landing_page"))
+
+    try:
+        ensure_admin_account_exists()
+    except Exception as e:
+        return f"Database Error: {str(e)}", 500
+
+    error = None
+    success = None
+    if request.method == "POST":
+        username = session.get("auth_username") or DEFAULT_ADMIN_USERNAME
+        old_password = request.form.get("old_password") or ""
+        new_password = request.form.get("new_password") or ""
+        confirm_password = request.form.get("confirm_password") or ""
+
+        if not verify_admin_credentials(username, old_password):
+            error = "Old password is incorrect."
+        elif new_password != confirm_password:
+            error = "New password and confirm password do not match."
+        elif old_password == new_password:
+            error = "New password must be different from old password."
+        else:
+            strong_password, strength_error = validate_password_strength(new_password)
+            if not strong_password:
+                error = strength_error
+            elif not update_admin_password(username, new_password):
+                error = "Unable to update password. Please try again."
+            else:
+                success = "Password updated successfully."
+
+    return render_template(
+        "change_password.html",
+        auth_username=session.get("auth_username") or DEFAULT_ADMIN_USERNAME,
+        error=error,
+        success=success,
+    )
 
 
 @app.route("/start")
@@ -369,11 +526,15 @@ def reset_everything():
 @app.route("/api/get_product_info/<barcode>")
 def get_product_info(barcode):
     try:
+        is_valid, normalized_barcode = is_valid_scan_barcode(barcode)
+        if not is_valid:
+            return jsonify({"status": "error", "message": "Invalid barcode format"}), 400
+
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
             "SELECT name, unit_price, weight FROM PRODUCT WHERE barcode = %s",
-            (barcode,),
+            (normalized_barcode,),
         )
         product = cursor.fetchone()
         conn.close()
@@ -395,6 +556,10 @@ def get_product_info(barcode):
 def add_product():
     data = request.json or {}
     try:
+        is_valid, error_message = validate_product_identity(data.get("name"), data.get("barcode"))
+        if not is_valid:
+            return jsonify({"status": "error", "message": error_message}), 400
+
         item_weight = float(data.get("weight", 0))
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -423,6 +588,10 @@ def add_product():
 def update_product():
     data = request.json or {}
     try:
+        is_valid, error_message = validate_product_identity(data.get("name"), data.get("barcode"))
+        if not is_valid:
+            return jsonify({"status": "error", "message": error_message}), 400
+
         item_weight = float(data.get("weight", 0))
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -472,11 +641,15 @@ def scan_item():
     if not barcode or not label:
         return jsonify({"status": "error", "message": "Missing barcode or cart_label"}), 400
 
+    is_valid, normalized_barcode = is_valid_scan_barcode(barcode)
+    if not is_valid:
+        return jsonify({"status": "error", "message": "Invalid barcode format"}), 400
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        product = product_by_barcode(cursor, barcode)
+        product = product_by_barcode(cursor, normalized_barcode)
         if not product:
             conn.close()
             return jsonify({"status": "error", "message": "Product not found"}), 404
@@ -536,10 +709,14 @@ def remove_item():
     if not barcode or not label:
         return jsonify({"status": "error", "message": "Missing barcode or cart_label"}), 400
 
+    is_valid, normalized_barcode = is_valid_scan_barcode(barcode)
+    if not is_valid:
+        return jsonify({"status": "error", "message": "Invalid barcode format"}), 400
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        product = product_by_barcode(cursor, barcode)
+        product = product_by_barcode(cursor, normalized_barcode)
         session = active_session_for_label(cursor, label)
         if not product or not session:
             conn.close()

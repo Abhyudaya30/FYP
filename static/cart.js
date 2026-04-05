@@ -21,6 +21,8 @@ const state = {
     lastScanAt: 0
 };
 
+const barcodePattern = /^\d{7}$/;
+
 let cartInterval = setInterval(updateCart, 2000);
 let securityInterval = setInterval(checkSecurity, 2500);
 
@@ -348,19 +350,33 @@ async function onScanSuccess(decodedText) {
     state.lastDecodedText = decodedText;
     state.lastScanAt = now;
 
+    const normalizedBarcode = (decodedText || "").trim();
+    if (!barcodePattern.test(normalizedBarcode)) {
+        setScanStatus("Unrecognized barcode");
+        state.scanInProgress = false;
+        setTimeout(() => {
+            if (!modalOpen()) setScanStatus("Camera ready for scanning");
+        }, 1200);
+        await ensureScannerRunning();
+        return;
+    }
+
     try { scanner.pause(true); } catch (_) {}
     setScanStatus("Processing scan...");
 
     try {
-        const { data } = await apiJson(`/api/get_product_info/${encodeURIComponent(decodedText)}`);
+        const { data } = await apiJson(`/api/get_product_info/${encodeURIComponent(normalizedBarcode)}`);
         if (data.status !== "success") {
-            alert("Error: " + (data.message || "Unknown product"));
+            setScanStatus(data.message === "Invalid barcode format" ? "Unrecognized barcode" : "Unknown barcode");
             state.scanInProgress = false;
+            setTimeout(() => {
+                if (!modalOpen()) setScanStatus("Camera ready for scanning");
+            }, 1200);
             await ensureScannerRunning();
             return;
         }
 
-        state.currentScanData = decodedText;
+        state.currentScanData = normalizedBarcode;
         document.getElementById("modalProdName").innerText = data.name;
         document.getElementById("modalProdPrice").innerText = "Rs. " + data.price;
         document.getElementById("scanModal").style.display = "flex";
