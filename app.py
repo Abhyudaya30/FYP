@@ -300,7 +300,7 @@ def auto_assign_cart():
         available = cursor.fetchone()
         if not available:
             conn.close()
-            return "<h1>All carts in use!</h1>", 200
+            return render_template("all_carts_busy.html"), 200
 
         pin = generate_pin()
         cursor.execute(
@@ -491,7 +491,12 @@ def all_carts_status():
         data = cursor.fetchall()
         conn.close()
         for row in data:
-            row["checkout_requested"] = checkout_requested(row["cart_label"])
+            label = row["cart_label"]
+            row["checkout_requested"] = checkout_requested(label)
+            state = hw_state(label)
+            row["verification_alert"] = bool(
+                state["alert"] or state["pending_placement"] or state["pending_removal"]
+            )
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -794,7 +799,7 @@ def confirm_placement(label):
 
 @app.route("/api/confirm_removal/<label>", methods=["POST"])
 def confirm_removal(label):
-    set_hw_state(label, removal=False, expected_weight=0.0)
+    set_hw_state(label, removal=False, expected_weight=0.0, alert=False)
     return jsonify({"status": "verified"})
 
 

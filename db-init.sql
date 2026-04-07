@@ -6,10 +6,12 @@ USE smart_cart_system;
 
 CREATE TABLE IF NOT EXISTS CART (
   cart_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  mac_address VARCHAR(100) NOT NULL UNIQUE,
   cart_label VARCHAR(10) UNIQUE,
   pin VARCHAR(6)
 );
+
+ALTER TABLE CART
+  DROP COLUMN IF EXISTS mac_address;
 
 CREATE TABLE IF NOT EXISTS PRODUCT (
   product_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -48,12 +50,11 @@ CREATE TABLE IF NOT EXISTS ADMIN_ACCOUNT (
 
 -- Initial admin row is auto-seeded by app.py on first login attempt if missing.
 
-INSERT INTO CART (mac_address, cart_label, pin)
+INSERT INTO CART (cart_label, pin)
 VALUES
-  ('AA:BB:CC:DD:EE:01', '01', NULL),
-  ('AA:BB:CC:DD:EE:02', '02', NULL)
+  ('01', NULL),
+  ('02', NULL)
 ON DUPLICATE KEY UPDATE
-  mac_address = VALUES(mac_address),
   cart_label = VALUES(cart_label),
   pin = VALUES(pin);
 

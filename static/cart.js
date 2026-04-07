@@ -6,6 +6,7 @@ const scannerConfig = { fps: 15, qrbox: { width: 240, height: 140 } };
 const hasQrLib = typeof Html5Qrcode !== "undefined";
 const scanner = hasQrLib ? new Html5Qrcode("reader") : null;
 const startCameraBtn = document.getElementById("startCameraBtn");
+const verificationAlertIcon = document.getElementById("verificationAlertIcon");
 let preferredCameraId = null;
 let scannerStartInFlight = null;
 const scannerStates = hasQrLib && typeof Html5QrcodeScannerState !== "undefined"
@@ -16,7 +17,8 @@ const state = {
     currentScanData: null,
     scanInProgress: false,
     addInProgress: false,
-    securityAlertActive: false,
+    securityPopupVisible: false,
+    securityPopupAcknowledged: false,
     lastDecodedText: "",
     lastScanAt: 0
 };
@@ -37,7 +39,14 @@ function setScanStatus(text) {
     if (el) el.innerText = text;
 }
 
-function ensureSecurityAlertUi() {
+function setVerificationAlertState(visible, message) {
+    if (!verificationAlertIcon) return;
+    verificationAlertIcon.classList.toggle("visible", visible);
+    verificationAlertIcon.title = message || "Unverified item in cart";
+    verificationAlertIcon.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
+function ensureSecurityAlertPopup() {
     let overlay = document.getElementById("securityAlertOverlay");
     if (overlay) return overlay;
 
@@ -57,8 +66,8 @@ function ensureSecurityAlertUi() {
     overlay.innerHTML = `
         <div style="max-width:360px;width:100%;background:#fff;border-radius:18px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,0.25);text-align:center;">
             <div style="font-size:18px;font-weight:700;color:#991b1b;margin-bottom:10px;">Security Alert</div>
-            <div style="font-size:14px;line-height:1.5;color:#334155;margin-bottom:18px;">
-                Unscanned item detected. Please remove the item from the cart to continue.
+            <div id="securityAlertText" style="font-size:14px;line-height:1.5;color:#334155;margin-bottom:18px;">
+                Unverified item detected. Please verify item placement/removal.
             </div>
             <button id="securityAlertDismissBtn" style="border:none;background:#0f172a;color:#fff;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer;">
                 OK
@@ -69,17 +78,31 @@ function ensureSecurityAlertUi() {
     document.body.appendChild(overlay);
     document.getElementById("securityAlertDismissBtn").addEventListener("click", () => {
         overlay.style.display = "none";
-        state.securityAlertActive = false;
+        state.securityPopupVisible = false;
+        state.securityPopupAcknowledged = true;
         if (!modalOpen() && !state.scanInProgress) {
             ensureScannerRunning();
         }
     });
+
     return overlay;
 }
 
-function showSecurityAlert() {
-    const overlay = ensureSecurityAlertUi();
+function showSecurityAlertPopup(message) {
+    const overlay = ensureSecurityAlertPopup();
+    const textEl = document.getElementById("securityAlertText");
+    if (textEl && message) {
+        textEl.textContent = message;
+    }
     overlay.style.display = "flex";
+    state.securityPopupVisible = true;
+}
+
+function hideSecurityAlertPopup() {
+    const overlay = document.getElementById("securityAlertOverlay");
+    if (!overlay) return;
+    overlay.style.display = "none";
+    state.securityPopupVisible = false;
 }
 
 function showStartCamera(show) {
@@ -269,16 +292,30 @@ async function ensureScannerRunning() {
 
 async function checkSecurity() {
     try {
-        const { data } = await apiJson(`/api/check_alert/${cartLabel}`);
-        if (data.alert !== true || state.securityAlertActive) return;
+        const { data } = await apiJson(`/api/hardware_state/${cartLabel}`);
+        const needsPlacementVerification = data.pending_placement === true;
+        const needsRemovalVerification = data.pending_removal === true;
+        const hasSecurityAlert = data.alert === true;
 
-        state.securityAlertActive = true;
-        showSecurityAlert();
+        const showAlert = hasSecurityAlert || needsPlacementVerification || needsRemovalVerification;
+        let message = "Unverified item in cart";
+        if (hasSecurityAlert) {
+            message = "Unverified item detected";
+        } else if (needsPlacementVerification) {
+            message = "Waiting for placement verification";
+        } else if (needsRemovalVerification) {
+            message = "Waiting for removal verification";
+        }
 
-        await fetch(`/api/clear_alert/${cartLabel}`, { method: "POST" });
+        setVerificationAlertState(showAlert, message);
 
-        if (!modalOpen() && !state.scanInProgress) {
-            await ensureScannerRunning();
+        if (showAlert) {
+            if (!state.securityPopupVisible && !state.securityPopupAcknowledged) {
+                showSecurityAlertPopup(message);
+            }
+        } else {
+            state.securityPopupAcknowledged = false;
+            hideSecurityAlertPopup();
         }
     } catch (err) {
         console.log("Security check failed");
@@ -460,3 +497,4 @@ if (hasQrLib) {
     setScanStatus("Scanner library failed to load");
 }
 updateCart();
+checkSecurity();

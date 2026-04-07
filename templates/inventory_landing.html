@@ -6,7 +6,7 @@
     <title>Inventory Access - Smart Cart</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
-<body class="app-bg">
+<body class="app-bg auth-compact-page">
     <div class="app-shell center-content">
         <div class="hero-section">
             <div class="logo-circle">📦</div>
@@ -15,22 +15,19 @@
         </div>
 
         <div class="content">
-            <div class="instruction-card">
-                Add new items and update existing products from one place.
-            </div>
 
             {% if login_error %}
             <div class="auth-error">{{ login_error }}</div>
             {% endif %}
 
-            <form class="auth-card" method="POST" action="/admin/inventory">
+            <form class="auth-card" style="margin-bottom: 8px;" method="POST" action="/admin/inventory">
                 <label class="auth-label" for="username">Username</label>
                 <input class="auth-input" type="text" id="username" name="username" placeholder="Enter username" required>
 
                 <label class="auth-label" for="password">Password</label>
                 <input class="auth-input" type="password" id="password" name="password" placeholder="Enter password" required>
 
-                <button class="primary-btn wide-btn" type="submit">Login to Inventory</button>
+                <button class="primary-btn wide-btn" type="submit">Login</button>
             </form>
 
             <button class="primary-btn wide-btn" type="button" style="background-image: linear-gradient(135deg, #0f766e, #14b8a6); margin-top: 0;" onclick="window.location.href='/admin/change-password'">Change Password</button>

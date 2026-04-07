@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Carts Busy - Smart Cart</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="app-bg">
+    <div class="app-shell center-content">
+        <div class="hero-section">
+            <div class="logo-circle">WAIT</div>
+            <h1 class="top-title">All Carts Are Busy</h1>
+            <p class="section-subtitle">Please wait for the next available cart.</p>
+        </div>
+
+        <div class="content">
+            <div class="instruction-card" style="text-align:left;">
+                <p style="margin-bottom:8px;"><strong>Current Status:</strong> All carts are in active use.</p>
+                <p id="busyCartList" style="margin:0;">Checking active carts...</p>
+            </div>
+
+
+
+            <button class="primary-btn wide-btn" onclick="window.location.href='/start'">Try Now</button>
+            <button class="primary-btn wide-btn" style="background-image: linear-gradient(135deg, #0f766e, #14b8a6);" onclick="window.location.href='/'">Back to Home</button>
+        </div>
+    </div>
+
+    <script>
+        async function checkAvailability() {
+            try {
+                const response = await fetch('/api/all_carts_status');
+                const carts = await response.json();
+
+                const busyCarts = carts.filter(c => c.status === 'active').map(c => c.cart_label);
+                const hasIdleCart = carts.some(c => c.status === 'idle');
+
+                const busyText = busyCarts.length
+                    ? `Active carts: ${busyCarts.join(', ')}`
+                    : 'No active carts found.';
+                document.getElementById('busyCartList').textContent = busyText;
+
+                if (hasIdleCart) {
+                    document.getElementById('waitStatus').textContent = 'Cart available. Redirecting...';
+                    setTimeout(() => {
+                        window.location.href = '/start';
+                    }, 700);
+                }
+            } catch (err) {
+                document.getElementById('waitStatus').textContent = 'Unable to check carts. Retrying...';
+            }
+        }
+
+        checkAvailability();
+        setInterval(checkAvailability, 2500);
+    </script>
+</body>
+</html>

@@ -353,9 +353,16 @@ void evaluateWeightSecurity() {
     float delta = currentWeight - baselineWeight;
 
     if (pendingPlacement) {
-        float minBound = expectedWeight * (1.0f - PRODUCT_WEIGHT_TOLERANCE);
-        float maxBound = expectedWeight * (1.0f + PRODUCT_WEIGHT_TOLERANCE);
-        bool inRange = delta >= minBound && delta <= maxBound;
+        float expectedAbs = fabsf(expectedWeight);
+        if (expectedAbs <= 0.0f) {
+            placementStableStart = 0;
+            return;
+        }
+
+        float minBound = expectedAbs * (1.0f - PRODUCT_WEIGHT_TOLERANCE);
+        float maxBound = expectedAbs * (1.0f + PRODUCT_WEIGHT_TOLERANCE);
+        bool inExpectedDirection = delta > 0.0f;
+        bool inRange = inExpectedDirection && delta >= minBound && delta <= maxBound;
         bool clearlyOutOfRange = delta < (minBound - RANGE_EXIT_GRACE) || delta > (maxBound + RANGE_EXIT_GRACE);
 
         if (inRange) {
@@ -373,9 +380,16 @@ void evaluateWeightSecurity() {
     }
 
     if (pendingRemoval) {
-        float minBound = -expectedWeight * (1.0f + PRODUCT_WEIGHT_TOLERANCE);
-        float maxBound = -expectedWeight * (1.0f - PRODUCT_WEIGHT_TOLERANCE);
-        bool inRange = delta >= minBound && delta <= maxBound;
+        float expectedAbs = fabsf(expectedWeight);
+        if (expectedAbs <= 0.0f) {
+            removalStableStart = 0;
+            return;
+        }
+
+        float minBound = -expectedAbs * (1.0f + PRODUCT_WEIGHT_TOLERANCE);
+        float maxBound = -expectedAbs * (1.0f - PRODUCT_WEIGHT_TOLERANCE);
+        bool inExpectedDirection = delta < 0.0f;
+        bool inRange = inExpectedDirection && delta >= minBound && delta <= maxBound;
         bool clearlyOutOfRange = delta < (minBound - RANGE_EXIT_GRACE) || delta > (maxBound + RANGE_EXIT_GRACE);
 
         if (inRange) {

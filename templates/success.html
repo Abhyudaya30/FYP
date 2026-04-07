@@ -40,6 +40,14 @@
     </div>
     <script>
         const cartLabel = "{{ cart_label }}";
+        let redirectScheduled = false;
+
+        function setApprovalStatus(text, color = "#d32f2f") {
+            const statusEl = document.getElementById("approval-status");
+            if (!statusEl) return;
+            statusEl.textContent = text;
+            statusEl.style.color = color;
+        }
 
         async function loadBillData() {
             if (!cartLabel) return;
@@ -84,13 +92,26 @@
                 const res = await fetch('/api/all_carts_status');
                 const carts = await res.json();
                 const session = carts.find(c => c.cart_label === cartLabel);
-                
+
                 if (!session || session.status !== 'active') {
-                    window.location.href = '/';
+                    setApprovalStatus("Payment approved. Redirecting...", "#2e7d32");
+                    if (!redirectScheduled) {
+                        redirectScheduled = true;
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 1200);
+                    }
                     return;
+                }
+
+                if (session.checkout_requested) {
+                    setApprovalStatus("Waiting for cashier approval...", "#d32f2f");
+                } else {
+                    setApprovalStatus("Session active. Waiting for checkout request...", "#f57c00");
                 }
             } catch (err) {
                 console.error("Status check error", err);
+                setApprovalStatus("Unable to check cashier status. Retrying...", "#f57c00");
             }
         }
 

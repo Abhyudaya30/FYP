@@ -56,6 +56,24 @@
   cursor: pointer;
 }
 
+.verification-icon {
+  display: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #fca5a5;
+  background-color: #fee2e2;
+  color: #b91c1c;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.verification-icon.visible {
+  display: inline-flex;
+}
+
 .top-badge {
   background-color: #e8ebff;
   color: #4f46e5;
@@ -295,6 +313,48 @@
   text-align: center;
 }
 
+.auth-compact-page {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  overflow: hidden;
+}
+
+.auth-compact-page .app-shell {
+  max-height: calc(100vh - 20px);
+}
+
+.auth-compact-page .hero-section {
+  padding-top: 18px;
+  padding-bottom: 10px;
+}
+
+.auth-compact-page .logo-circle {
+  width: 84px;
+  height: 84px;
+  line-height: 84px;
+  font-size: 42px;
+  margin-bottom: 12px;
+}
+
+.auth-compact-page .content {
+  padding-top: 10px;
+  padding-bottom: 14px;
+}
+
+.auth-compact-page .auth-card {
+  margin-bottom: 8px;
+  padding: 14px;
+}
+
+.auth-compact-page .primary-btn {
+  margin-top: 8px;
+  padding: 12px;
+}
+
+.auth-compact-page .auth-note {
+  margin-top: 10px;
+}
+
 /* --- 8. ADMIN DASHBOARD STYLES --- */
 .admin-table {
   width: 100%;
@@ -374,6 +434,26 @@ body {
   padding: 20px;
   text-align: center;
   border: 2px solid #ddd;
+}
+
+.card-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cashier-alert-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid #fca5a5;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .card.active {

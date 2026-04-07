@@ -34,7 +34,10 @@
                 const statusLabel = waitingForCashier ? 'Awaiting Cashier' : (isActive ? 'Busy' : 'Idle');
                 htmlString += `
                     <div class="card ${isActive ? 'active' : ''}">
-                        <div class="cart-title">CART ${c.cart_label}</div>
+                        <div class="card-top-row">
+                            <div class="cart-title">CART ${c.cart_label}</div>
+                            ${c.verification_alert ? '<span class="cashier-alert-icon" title="Unverified item in cart">⚠</span>' : ''}
+                        </div>
                         <span class="status-tag ${isActive ? 'status-active' : 'status-idle'}">
                             ${statusLabel}
                         </span>
