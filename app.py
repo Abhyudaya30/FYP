@@ -15,8 +15,21 @@ db_config = {
     "database": "smart_cart_system",
 }
 
-DEFAULT_ADMIN_USERNAME = "Admin"
-DEFAULT_ADMIN_PASSWORD = "Admin@123"
+DEFAULT_CASHIER_USERNAME = "Cashier"
+DEFAULT_CASHIER_PASSWORD = "Cashier@123"
+DEFAULT_INVENTORY_USERNAME = "Inventory"
+DEFAULT_INVENTORY_PASSWORD = "Inventory@123"
+
+DEFAULT_ROLE_ACCOUNTS = {
+    "cashier": {
+        "username": DEFAULT_CASHIER_USERNAME,
+        "password": DEFAULT_CASHIER_PASSWORD,
+    },
+    "inventory": {
+        "username": DEFAULT_INVENTORY_USERNAME,
+        "password": DEFAULT_INVENTORY_PASSWORD,
+    },
+}
 
 PASSWORD_UPPERCASE_PATTERN = re.compile(r"[A-Z]")
 PASSWORD_DIGIT_PATTERN = re.compile(r"\d")
@@ -29,7 +42,7 @@ security_alerts = {}
 expected_weight_change = {}
 checkout_requests = {}
 
-BARCODE_PATTERN = re.compile(r"^\d{7}$")
+BARCODE_PATTERN = re.compile(r"^\d{3,14}$")
 
 
 def get_db_connection():
@@ -54,16 +67,37 @@ def active_session_for_label(cursor, label):
     return cursor.fetchone()
 
 
+def barcode_lookup_candidates(barcode):
+    normalized = (barcode or "").strip()
+    if not normalized:
+        return []
+
+    candidates = [normalized]
+    # Many scanners emit UPC-A as EAN-13 with a leading zero and vice versa.
+    if normalized.isdigit():
+        if len(normalized) == 12:
+            candidates.append(f"0{normalized}")
+        elif len(normalized) == 13 and normalized.startswith("0"):
+            candidates.append(normalized[1:])
+
+    # De-duplicate while preserving order.
+    return list(dict.fromkeys(candidates))
+
+
 def product_by_barcode(cursor, barcode):
-    cursor.execute(
-        """
-        SELECT product_id, name, unit_price, stock_quantity, weight
-        FROM PRODUCT
-        WHERE barcode = %s
-        """,
-        (barcode,),
-    )
-    return cursor.fetchone()
+    for candidate in barcode_lookup_candidates(barcode):
+        cursor.execute(
+            """
+            SELECT product_id, name, unit_price, stock_quantity, weight
+            FROM PRODUCT
+            WHERE barcode = %s
+            """,
+            (candidate,),
+        )
+        product = cursor.fetchone()
+        if product:
+            return product
+    return None
 
 
 def is_valid_scan_barcode(barcode):
@@ -79,7 +113,7 @@ def validate_product_identity(name, barcode):
     if normalized_name == normalized_barcode:
         return False, "Product name and barcode cannot be the same."
     if not BARCODE_PATTERN.fullmatch(normalized_barcode):
-        return False, "Barcode must be 7 digits."
+        return False, "Barcode must be 3 to 14 digits."
     return True, None
 
 
@@ -107,7 +141,7 @@ def checkout_requested(label):
     return checkout_requests.get(label, False)
 
 
-def ensure_admin_account_exists():
+def ensure_default_accounts_exist():
     conn = get_db_connection()
     try:
         cursor = conn.cursor(dictionary=True)
@@ -122,18 +156,20 @@ def ensure_admin_account_exists():
             )
             """
         )
-        cursor.execute(
-            "SELECT admin_id FROM ADMIN_ACCOUNT WHERE username = %s LIMIT 1",
-            (DEFAULT_ADMIN_USERNAME,),
-        )
-        if not cursor.fetchone():
+
+        for account in DEFAULT_ROLE_ACCOUNTS.values():
             cursor.execute(
-                "INSERT INTO ADMIN_ACCOUNT (username, password_hash) VALUES (%s, %s)",
-                (
-                    DEFAULT_ADMIN_USERNAME,
-                    generate_password_hash(DEFAULT_ADMIN_PASSWORD),
-                ),
+                "SELECT admin_id FROM ADMIN_ACCOUNT WHERE username = %s LIMIT 1",
+                (account["username"],),
             )
+            if not cursor.fetchone():
+                cursor.execute(
+                    "INSERT INTO ADMIN_ACCOUNT (username, password_hash) VALUES (%s, %s)",
+                    (
+                        account["username"],
+                        generate_password_hash(account["password"]),
+                    ),
+                )
         conn.commit()
     finally:
         conn.close()
@@ -152,12 +188,19 @@ def validate_password_strength(password):
     return True, None
 
 
-def verify_admin_credentials(username, password):
+def verify_admin_credentials(username, password, role=None):
     normalized_username = (username or "").strip()
     if not normalized_username:
         return False
 
-    ensure_admin_account_exists()
+    if role:
+        default_account = DEFAULT_ROLE_ACCOUNTS.get(role)
+        if not default_account:
+            return False
+        if normalized_username.lower() != default_account["username"].lower():
+            return False
+
+    ensure_default_accounts_exist()
     conn = get_db_connection()
     try:
         cursor = conn.cursor(dictionary=True)
@@ -178,7 +221,7 @@ def update_admin_password(username, new_password):
     if not normalized_username:
         return False
 
-    ensure_admin_account_exists()
+    ensure_default_accounts_exist()
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
@@ -208,7 +251,7 @@ def cashier_landing_page():
 def cashier_login():
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
-    if verify_admin_credentials(username, password):
+    if verify_admin_credentials(username, password, role="cashier"):
         session["cashier_authenticated"] = True
         session["auth_username"] = username
         return redirect(url_for("cashier_page"))
@@ -228,7 +271,7 @@ def inventory_landing_page():
 def inventory_login():
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
-    if verify_admin_credentials(username, password):
+    if verify_admin_credentials(username, password, role="inventory"):
         session["inventory_authenticated"] = True
         session["auth_username"] = username
         return redirect(url_for("admin_inventory"))
@@ -241,13 +284,13 @@ def inventory_login():
 @app.route("/admin/change-password", methods=["GET", "POST"])
 def change_admin_password():
     try:
-        ensure_admin_account_exists()
+        ensure_default_accounts_exist()
     except Exception as e:
         return f"Database Error: {str(e)}", 500
 
     error = None
     success = None
-    username_value = DEFAULT_ADMIN_USERNAME
+    username_value = DEFAULT_CASHIER_USERNAME
     if request.method == "POST":
         username = (request.form.get("username") or "").strip()
         username_value = username
@@ -337,7 +380,6 @@ def show_bill(label):
 def cashier_page():
     if not session.get("cashier_authenticated"):
         return redirect(url_for("cashier_landing_page"))
-    session.pop("cashier_authenticated", None)
     return render_template("cashier.html")
 
 
@@ -351,7 +393,6 @@ def admin_inventory():
     if not session.get("inventory_authenticated"):
         return redirect(url_for("inventory_landing_page"))
     try:
-        session.pop("inventory_authenticated", None)
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT * FROM PRODUCT ORDER BY product_id ASC")
@@ -534,11 +575,7 @@ def get_product_info(barcode):
 
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT name, unit_price, weight FROM PRODUCT WHERE barcode = %s",
-            (normalized_barcode,),
-        )
-        product = cursor.fetchone()
+        product = product_by_barcode(cursor, normalized_barcode)
         conn.close()
         if not product:
             return jsonify({"status": "error", "message": "Product not found"}), 404
@@ -563,6 +600,7 @@ def add_product():
             return jsonify({"status": "error", "message": error_message}), 400
 
         item_weight = float(data.get("weight", 0))
+        normalized_barcode = data.get("barcode", "").strip()
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -572,7 +610,7 @@ def add_product():
             """,
             (
                 data["name"],
-                data["barcode"],
+                normalized_barcode,
                 data["price"],
                 data["stock"],
                 item_weight,
@@ -595,6 +633,7 @@ def update_product():
             return jsonify({"status": "error", "message": error_message}), 400
 
         item_weight = float(data.get("weight", 0))
+        normalized_barcode = data.get("barcode", "").strip()
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -606,7 +645,7 @@ def update_product():
             """,
             (
                 data["name"],
-                data["barcode"],
+                normalized_barcode,
                 data["price"],
                 data["stock"],
                 item_weight,

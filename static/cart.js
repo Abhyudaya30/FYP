@@ -2,7 +2,23 @@ const urlSegments = window.location.pathname.split("/");
 const cartLabel = urlSegments[urlSegments.length - 1];
 document.getElementById("displayCartLabel").innerText = cartLabel;
 
-const scannerConfig = { fps: 15, qrbox: { width: 240, height: 140 } };
+const supportedLinearFormats = typeof Html5QrcodeSupportedFormats !== "undefined"
+    ? [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.CODABAR,
+        Html5QrcodeSupportedFormats.ITF
+    ].filter(format => format !== undefined && format !== null)
+    : null;
+const scannerConfig = {
+    fps: 15,
+    qrbox: { width: 280, height: 120 },
+    ...(supportedLinearFormats ? { formatsToSupport: supportedLinearFormats } : {})
+};
 const hasQrLib = typeof Html5Qrcode !== "undefined";
 const scanner = hasQrLib ? new Html5Qrcode("reader") : null;
 const startCameraBtn = document.getElementById("startCameraBtn");
@@ -23,7 +39,7 @@ const state = {
     lastScanAt: 0
 };
 
-const barcodePattern = /^\d{7}$/;
+const barcodePattern = /^\d{3,14}$/;
 
 let cartInterval = setInterval(updateCart, 2000);
 let securityInterval = setInterval(checkSecurity, 2500);
