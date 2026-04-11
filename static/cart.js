@@ -309,19 +309,10 @@ async function ensureScannerRunning() {
 async function checkSecurity() {
     try {
         const { data } = await apiJson(`/api/hardware_state/${cartLabel}`);
-        const needsPlacementVerification = data.pending_placement === true;
-        const needsRemovalVerification = data.pending_removal === true;
         const hasSecurityAlert = data.alert === true;
 
-        const showAlert = hasSecurityAlert || needsPlacementVerification || needsRemovalVerification;
-        let message = "Unverified item in cart";
-        if (hasSecurityAlert) {
-            message = "Unverified item detected";
-        } else if (needsPlacementVerification) {
-            message = "Waiting for placement verification";
-        } else if (needsRemovalVerification) {
-            message = "Waiting for removal verification";
-        }
+        const showAlert = hasSecurityAlert;
+        const message = "Security alert: weight mismatch or unscanned item detected";
 
         setVerificationAlertState(showAlert, message);
 

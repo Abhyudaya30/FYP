@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
+#include <math.h>
 #include "HX711.h"
 
 // --- NETWORK CONFIG ---
@@ -21,6 +22,7 @@ const int I2C_SCL_PIN = 9;
 const int BUZZER_CHANNEL = 0;
 const int BUZZER_FREQUENCY = 2400;
 const int BUZZER_RESOLUTION = 8;
+const int LCD_COLS = 16;
 
 // --- OBJECTS ---
 HX711 scale;
@@ -32,11 +34,14 @@ float calibrationFactor = 114.2f;
 const float MICRO_SPIKE_BAND = 3.0f;
 const float EMPTY_CART_BAND = 10.0f;
 const float NEGATIVE_TARE_THRESHOLD = -0.5f;
-const float UNVERIFIED_RISE_THRESHOLD = 20.0f;
-const float UNVERIFIED_DROP_THRESHOLD = 20.0f;
-const float PRODUCT_WEIGHT_TOLERANCE = 0.10f;  // 10%
-const float RANGE_EXIT_GRACE = 3.0f;
-const int WEIGHT_SAMPLE_COUNT = 3;
+const float UNVERIFIED_RISE_THRESHOLD = 45.0f;
+const float UNVERIFIED_DROP_THRESHOLD = 45.0f;
+const float PRODUCT_WEIGHT_TOLERANCE = 0.15f;  // 15%
+const float MIN_PRODUCT_TOLERANCE_GRAMS = 25.0f;
+const float RANGE_EXIT_GRACE = 8.0f;
+const float IDLE_BASELINE_DRIFT_BAND = 8.0f;
+const float IDLE_SPIKE_JUMP_THRESHOLD = 180.0f;
+const int WEIGHT_SAMPLE_COUNT = 5;
 
 // --- TIMINGS ---
 const unsigned long UPDATE_INTERVAL_MS = 350;
@@ -45,7 +50,9 @@ const unsigned long WIFI_RETRY_INTERVAL_MS = 2500;
 const unsigned long NEGATIVE_TARE_HOLD_MS = 1200;
 const unsigned long EMPTY_AUTO_TARE_MS = 15000;
 const unsigned long EXPECTED_WEIGHT_HOLD_MS = 900;
-const unsigned long SECURITY_RISE_HOLD_MS = 900;
+const unsigned long SECURITY_RISE_HOLD_MS = 1200;
+const unsigned long EXPECTED_MISMATCH_HOLD_MS = 1800;
+const unsigned long IDLE_SPIKE_CONFIRM_MS = 450;
 
 // --- RUNTIME STATE ---
 float currentWeight = 0.0f;
@@ -69,7 +76,60 @@ unsigned long negativeWeightStart = 0;
 unsigned long emptyCartStart = 0;
 unsigned long placementStableStart = 0;
 unsigned long removalStableStart = 0;
+unsigned long placementMismatchStart = 0;
+unsigned long removalMismatchStart = 0;
 unsigned long unverifiedRiseStart = 0;
+unsigned long idleSpikeStart = 0;
+float idleSpikeCandidate = 0.0f;
+String lastLcdLine1 = "";
+String lastLcdLine2 = "";
+
+String fitLcdLine(const String& text) {
+    String line = text.substring(0, LCD_COLS);
+    while (line.length() < LCD_COLS) {
+        line += ' ';
+    }
+    return line;
+}
+
+void resetIdleSpikeTracking() {
+    idleSpikeStart = 0;
+    idleSpikeCandidate = 0.0f;
+}
+
+void resetVerificationTracking() {
+    placementStableStart = 0;
+    removalStableStart = 0;
+    placementMismatchStart = 0;
+    removalMismatchStart = 0;
+    unverifiedRiseStart = 0;
+}
+
+float normalizedExpectedWeight(float rawExpectedWeight) {
+    float expectedAbs = fabsf(rawExpectedWeight);
+    if (expectedAbs <= 10.0f) {
+        expectedAbs *= 1000.0f;
+    }
+    return expectedAbs;
+}
+
+float expectedToleranceWeight(float expectedAbs) {
+    return fmaxf(expectedAbs * PRODUCT_WEIGHT_TOLERANCE, MIN_PRODUCT_TOLERANCE_GRAMS);
+}
+
+bool mismatchHeldLongEnough(unsigned long& mismatchStart, bool isMismatch) {
+    if (!isMismatch) {
+        mismatchStart = 0;
+        return false;
+    }
+
+    unsigned long now = millis();
+    if (mismatchStart == 0) {
+        mismatchStart = now;
+    }
+
+    return (now - mismatchStart) >= EXPECTED_MISMATCH_HOLD_MS;
+}
 
 void beep(int durationMs) {
     if (buzzerReady) {
@@ -85,11 +145,19 @@ void beep(int durationMs) {
 }
 
 void lcdPrint(const String& line1, const String& line2) {
-    lcd.clear();
+    String clippedLine1 = fitLcdLine(line1);
+    String clippedLine2 = fitLcdLine(line2);
+
+    if (clippedLine1 == lastLcdLine1 && clippedLine2 == lastLcdLine2) {
+        return;
+    }
+
+    lastLcdLine1 = clippedLine1;
+    lastLcdLine2 = clippedLine2;
     lcd.setCursor(0, 0);
-    lcd.print(line1.substring(0, 16));
+    lcd.print(clippedLine1);
     lcd.setCursor(0, 1);
-    lcd.print(line2.substring(0, 16));
+    lcd.print(clippedLine2);
 }
 
 void resetScaleTracking() {
@@ -97,9 +165,8 @@ void resetScaleTracking() {
     currentWeight = 0.0f;
     negativeWeightStart = 0;
     emptyCartStart = millis();
-    placementStableStart = 0;
-    removalStableStart = 0;
-    unverifiedRiseStart = 0;
+    resetVerificationTracking();
+    resetIdleSpikeTracking();
     securityAlertRaised = false;
 }
 
@@ -214,9 +281,8 @@ void syncHardwareState() {
 
     if (placementStarted || removalStarted) {
         baselineWeight = currentWeight;
-        placementStableStart = 0;
-        removalStableStart = 0;
-        unverifiedRiseStart = 0;
+        resetVerificationTracking();
+        resetIdleSpikeTracking();
         securityAlertRaised = false;
     }
 }
@@ -232,6 +298,7 @@ void confirmPlacement() {
     expectedWeight = 0.0f;
     baselineWeight = currentWeight;
     placementStableStart = 0;
+    placementMismatchStart = 0;
     emptyCartStart = 0;
     delay(800);
 }
@@ -243,6 +310,7 @@ void confirmRemoval() {
     expectedWeight = 0.0f;
     baselineWeight = currentWeight;
     removalStableStart = 0;
+    removalMismatchStart = 0;
     emptyCartStart = 0;
 }
 
@@ -299,6 +367,7 @@ void readWeight() {
     if (!scale.is_ready()) return;
 
     float stableWeight = scale.get_units(WEIGHT_SAMPLE_COUNT);
+    unsigned long now = millis();
 
     // Ignore brief micro-spikes from vibration/electrical noise, but keep
     // the full reading path for real placement/removal workflows.
@@ -306,7 +375,81 @@ void readWeight() {
         stableWeight = 0.0f;
     }
 
+    bool bypassSpikeFilter = pendingPlacement || pendingRemoval || checkoutPending;
+    if (!bypassSpikeFilter) {
+        float jump = fabsf(stableWeight - currentWeight);
+        if (jump >= IDLE_SPIKE_JUMP_THRESHOLD) {
+            bool sameSpikeWindow = idleSpikeStart != 0
+                && fabsf(stableWeight - idleSpikeCandidate) <= (IDLE_SPIKE_JUMP_THRESHOLD * 0.5f);
+
+            if (!sameSpikeWindow) {
+                idleSpikeCandidate = stableWeight;
+                idleSpikeStart = now;
+                return;
+            }
+
+            if (now - idleSpikeStart < IDLE_SPIKE_CONFIRM_MS) {
+                return;
+            }
+        }
+    }
+
+    resetIdleSpikeTracking();
+
     currentWeight = stableWeight;
+}
+
+void evaluatePendingVerification(bool isPlacement) {
+    unsigned long& stableStart = isPlacement ? placementStableStart : removalStableStart;
+    unsigned long& mismatchStart = isPlacement ? placementMismatchStart : removalMismatchStart;
+
+    float delta = currentWeight - baselineWeight;
+    float expectedAbs = normalizedExpectedWeight(expectedWeight);
+    if (expectedAbs <= 0.0f) {
+        stableStart = 0;
+        mismatchStart = 0;
+        return;
+    }
+
+    float toleranceAbs = expectedToleranceWeight(expectedAbs);
+    float minBound = isPlacement ? (expectedAbs - toleranceAbs) : -(expectedAbs + toleranceAbs);
+    float maxBound = isPlacement ? (expectedAbs + toleranceAbs) : -(expectedAbs - toleranceAbs);
+    bool inExpectedDirection = isPlacement ? (delta > 0.0f) : (delta < 0.0f);
+    bool inRange = inExpectedDirection && delta >= minBound && delta <= maxBound;
+    bool clearlyOutOfRange = inExpectedDirection
+        && (delta < (minBound - RANGE_EXIT_GRACE) || delta > (maxBound + RANGE_EXIT_GRACE));
+
+    if (inRange) {
+        mismatchStart = 0;
+        if (stableStart == 0) {
+            stableStart = millis();
+        }
+
+        if (millis() - stableStart >= EXPECTED_WEIGHT_HOLD_MS) {
+            if (isPlacement) {
+                confirmPlacement();
+            } else {
+                confirmRemoval();
+            }
+        }
+        return;
+    }
+
+    stableStart = 0;
+    if (fabsf(delta) <= IDLE_BASELINE_DRIFT_BAND) {
+        mismatchStart = 0;
+        return;
+    }
+
+    if (!securityAlertRaised && mismatchHeldLongEnough(mismatchStart, clearlyOutOfRange)) {
+        if (isPlacement) {
+            triggerSecurityAlert();
+        } else {
+            triggerRemovalAlert();
+        }
+        securityAlertRaised = true;
+        mismatchStart = 0;
+    }
 }
 
 void handleNegativeAutoTare() {
@@ -353,56 +496,12 @@ void evaluateWeightSecurity() {
     float delta = currentWeight - baselineWeight;
 
     if (pendingPlacement) {
-        float expectedAbs = fabsf(expectedWeight);
-        if (expectedAbs <= 0.0f) {
-            placementStableStart = 0;
-            return;
-        }
-
-        float minBound = expectedAbs * (1.0f - PRODUCT_WEIGHT_TOLERANCE);
-        float maxBound = expectedAbs * (1.0f + PRODUCT_WEIGHT_TOLERANCE);
-        bool inExpectedDirection = delta > 0.0f;
-        bool inRange = inExpectedDirection && delta >= minBound && delta <= maxBound;
-        bool clearlyOutOfRange = delta < (minBound - RANGE_EXIT_GRACE) || delta > (maxBound + RANGE_EXIT_GRACE);
-
-        if (inRange) {
-            if (placementStableStart == 0) {
-                placementStableStart = millis();
-            }
-
-            if (millis() - placementStableStart >= EXPECTED_WEIGHT_HOLD_MS) {
-                confirmPlacement();
-            }
-        } else if (clearlyOutOfRange) {
-            placementStableStart = 0;
-        }
+        evaluatePendingVerification(true);
         return;
     }
 
     if (pendingRemoval) {
-        float expectedAbs = fabsf(expectedWeight);
-        if (expectedAbs <= 0.0f) {
-            removalStableStart = 0;
-            return;
-        }
-
-        float minBound = -expectedAbs * (1.0f + PRODUCT_WEIGHT_TOLERANCE);
-        float maxBound = -expectedAbs * (1.0f - PRODUCT_WEIGHT_TOLERANCE);
-        bool inExpectedDirection = delta < 0.0f;
-        bool inRange = inExpectedDirection && delta >= minBound && delta <= maxBound;
-        bool clearlyOutOfRange = delta < (minBound - RANGE_EXIT_GRACE) || delta > (maxBound + RANGE_EXIT_GRACE);
-
-        if (inRange) {
-            if (removalStableStart == 0) {
-                removalStableStart = millis();
-            }
-
-            if (millis() - removalStableStart >= EXPECTED_WEIGHT_HOLD_MS) {
-                confirmRemoval();
-            }
-        } else if (clearlyOutOfRange) {
-            removalStableStart = 0;
-        }
+        evaluatePendingVerification(false);
         return;
     }
 
@@ -410,6 +509,13 @@ void evaluateWeightSecurity() {
         if (fabsf(currentWeight) <= EMPTY_CART_BAND) {
             securityAlertRaised = false;
         }
+        return;
+    }
+
+    // Let tiny baseline drift settle without raising a security warning.
+    if (!securityAlertRaised && fabsf(delta) <= IDLE_BASELINE_DRIFT_BAND) {
+        baselineWeight = currentWeight;
+        unverifiedRiseStart = 0;
         return;
     }
 

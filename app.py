@@ -535,9 +535,7 @@ def all_carts_status():
             label = row["cart_label"]
             row["checkout_requested"] = checkout_requested(label)
             state = hw_state(label)
-            row["verification_alert"] = bool(
-                state["alert"] or state["pending_placement"] or state["pending_removal"]
-            )
+            row["verification_alert"] = bool(state["alert"])
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
