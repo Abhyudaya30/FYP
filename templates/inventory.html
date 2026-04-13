@@ -52,7 +52,9 @@
     </style>
 </head>
 <body class="app-bg">
+    <!-- Main page container for this view -->
     <div class="app-shell"> 
+        <!-- Header area with title and controls -->
         <header class="top-bar">
             <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                 <h1 class="top-title">Inventory Management</h1>
@@ -106,7 +108,9 @@
         </div>
     </div>
 
+    <!-- Page-specific client-side behavior -->
     <script>
+        // Runs the enable edit routine for this module.
         function enableEdit(id) {
             document.getElementById(`name-${id}`).disabled = false;
             document.getElementById(`barcode-${id}`).disabled = false;
@@ -118,6 +122,7 @@
             document.getElementById(`save-btn-${id}`).style.display = 'inline-block';
         }
 
+        // Runs the save change routine for this module.
         async function saveChange(id) {
             const name = document.getElementById(`name-${id}`).value;
             const barcode = document.getElementById(`barcode-${id}`).value;
@@ -150,6 +155,7 @@
             }
         }
 
+        // Adds product to the active collection or session.
         async function addProduct() {
             const name = document.getElementById('new-name').value;
             const barcode = document.getElementById('new-barcode').value;
@@ -173,6 +179,7 @@
             }
         }
 
+        // Deletes product and cleans up related records.
         async function deleteProduct(id) {
             if (confirm("Delete this product?")) {
                 const response = await fetch(`/api/delete_product/${id}`, { method: 'DELETE' });

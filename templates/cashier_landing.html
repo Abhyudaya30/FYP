@@ -7,20 +7,23 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body class="app-bg auth-compact-page">
+    <!-- Main page container for this view -->
     <div class="app-shell center-content">
         <div class="hero-section">
-            <div class="logo-circle">💳</div>
+            <div class="logo-circle">PAY</div>
             <h1 class="top-title">Cashier Dashboard</h1>
             <p class="section-subtitle">Monitor carts and approve checkout sessions.</p>
         </div>
 
         <div class="content">
-
             {% if login_error %}
             <div class="auth-error">{{ login_error }}</div>
             {% endif %}
 
+            <!-- Form for user input and server-side validation -->
             <form class="auth-card" style="margin-bottom: 8px;" method="POST" action="/cashier">
+                <!-- R6 - CSRF token: bind form submission to this app session and block forged requests. -->
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <label class="auth-label" for="username">Username</label>
                 <input class="auth-input" type="text" id="username" name="username" placeholder="Enter username" required>
 

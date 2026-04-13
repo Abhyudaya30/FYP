@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body class="app-bg">
+    <!-- Main page container for this view -->
     <div class="app-shell center-content">
         <div class="hero-section">
             <div class="success-icon">OK</div>
@@ -21,6 +22,7 @@
                 <p id="approval-status" style="font-weight: bold; color: #d32f2f; margin-top: 10px;">Waiting for cashier approval...</p>
             </div>
 
+            <!-- Page section block -->
             <section class="summary-card" style="margin-top: 20px; text-align: left; padding: 20px;">
                 <h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">Your Bill</h3>
                 <div class="cart-list" id="cartList" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; max-height: 250px; overflow-y: auto;">
@@ -38,10 +40,12 @@
             </section>
         </div>
     </div>
+    <!-- Page-specific client-side behavior -->
     <script>
         const cartLabel = "{{ cart_label }}";
         let redirectScheduled = false;
 
+        // Updates approval status in shared state for subsequent operations.
         function setApprovalStatus(text, color = "#d32f2f") {
             const statusEl = document.getElementById("approval-status");
             if (!statusEl) return;
@@ -49,6 +53,7 @@
             statusEl.style.color = color;
         }
 
+        // Loads bill data and refreshes dependent UI or runtime state.
         async function loadBillData() {
             if (!cartLabel) return;
             try {
@@ -87,6 +92,7 @@
             }
         }
 
+        // Checks status and reports the current status.
         async function checkStatus() {
             try {
                 const res = await fetch('/api/all_carts_status');
@@ -115,6 +121,7 @@
             }
         }
 
+        // Runs the init page routine for this module.
         async function initPage() {
             loadBillData();
             checkStatus();

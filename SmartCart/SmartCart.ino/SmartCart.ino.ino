@@ -12,6 +12,8 @@ const char* SSID = "GEESE";
 const char* PASSWORD = "biggreencoat";
 const String SERVER_BASE = "https://tiesha-gyroidal-drema.ngrok-free.dev";
 const String CART_LABEL = "01";
+// R1/R2 - Hardware auth: include a shared key so protected cart APIs still work for trusted cart firmware.
+const String HARDWARE_API_KEY = "smartcart-hw-key";
 
 // --- ESP32-S3 HARDWARE PINS ---
 const int LOADCELL_DOUT_PIN = 20;
@@ -41,18 +43,22 @@ const float MIN_PRODUCT_TOLERANCE_GRAMS = 25.0f;
 const float RANGE_EXIT_GRACE = 8.0f;
 const float IDLE_BASELINE_DRIFT_BAND = 8.0f;
 const float IDLE_SPIKE_JUMP_THRESHOLD = 180.0f;
-const int WEIGHT_SAMPLE_COUNT = 5;
+const float UNVERIFIED_RECOVERY_TOLERANCE = 0.20f;
+const float UNVERIFIED_RECOVERY_MIN_TOLERANCE_GRAMS = 20.0f;
+const int WEIGHT_SAMPLE_COUNT = 4;
 
 // --- TIMINGS ---
-const unsigned long UPDATE_INTERVAL_MS = 350;
+const unsigned long UPDATE_INTERVAL_MS = 300;
 const unsigned long PIN_FETCH_INTERVAL_MS = 5000;
 const unsigned long WIFI_RETRY_INTERVAL_MS = 2500;
 const unsigned long NEGATIVE_TARE_HOLD_MS = 1200;
 const unsigned long EMPTY_AUTO_TARE_MS = 15000;
 const unsigned long EXPECTED_WEIGHT_HOLD_MS = 900;
-const unsigned long SECURITY_RISE_HOLD_MS = 1200;
-const unsigned long EXPECTED_MISMATCH_HOLD_MS = 1800;
+const unsigned long SECURITY_RISE_HOLD_MS = 900;
+const unsigned long EXPECTED_MISMATCH_HOLD_MS = 1400;
 const unsigned long IDLE_SPIKE_CONFIRM_MS = 450;
+const unsigned long UNVERIFIED_RECOVERY_HOLD_MS = 500;
+const unsigned long ALERT_BUZZER_DURATION_MS = 1800;
 
 // --- RUNTIME STATE ---
 float currentWeight = 0.0f;
@@ -68,6 +74,9 @@ bool pendingRemoval = false;
 bool securityAlertRaised = false;
 bool checkoutPending = false;
 bool buzzerReady = false;
+bool unverifiedIncidentActive = false;
+int unverifiedIncidentDirection = 0;
+float unverifiedIncidentWeight = 0.0f;
 
 unsigned long lastUpdate = 0;
 unsigned long lastPinFetch = 0;
@@ -80,10 +89,12 @@ unsigned long placementMismatchStart = 0;
 unsigned long removalMismatchStart = 0;
 unsigned long unverifiedRiseStart = 0;
 unsigned long idleSpikeStart = 0;
+unsigned long unverifiedRecoveryStart = 0;
 float idleSpikeCandidate = 0.0f;
 String lastLcdLine1 = "";
 String lastLcdLine2 = "";
 
+// Formats lcd line so it fits hardware display constraints.
 String fitLcdLine(const String& text) {
     String line = text.substring(0, LCD_COLS);
     while (line.length() < LCD_COLS) {
@@ -92,11 +103,13 @@ String fitLcdLine(const String& text) {
     return line;
 }
 
+// Resets idle spike tracking back to a known baseline state.
 void resetIdleSpikeTracking() {
     idleSpikeStart = 0;
     idleSpikeCandidate = 0.0f;
 }
 
+// Resets verification tracking back to a known baseline state.
 void resetVerificationTracking() {
     placementStableStart = 0;
     removalStableStart = 0;
@@ -105,6 +118,7 @@ void resetVerificationTracking() {
     unverifiedRiseStart = 0;
 }
 
+// Computes normalized expected weight from raw input values.
 float normalizedExpectedWeight(float rawExpectedWeight) {
     float expectedAbs = fabsf(rawExpectedWeight);
     if (expectedAbs <= 10.0f) {
@@ -113,10 +127,12 @@ float normalizedExpectedWeight(float rawExpectedWeight) {
     return expectedAbs;
 }
 
+// Computes expected tolerance weight thresholds used by verification logic.
 float expectedToleranceWeight(float expectedAbs) {
     return fmaxf(expectedAbs * PRODUCT_WEIGHT_TOLERANCE, MIN_PRODUCT_TOLERANCE_GRAMS);
 }
 
+// Runs the mismatch held long enough routine for this module.
 bool mismatchHeldLongEnough(unsigned long& mismatchStart, bool isMismatch) {
     if (!isMismatch) {
         mismatchStart = 0;
@@ -131,6 +147,53 @@ bool mismatchHeldLongEnough(unsigned long& mismatchStart, bool isMismatch) {
     return (now - mismatchStart) >= EXPECTED_MISMATCH_HOLD_MS;
 }
 
+// Clears unverified incident to reset related workflow flags.
+void clearUnverifiedIncident(bool clearSecurityAlert) {
+    unverifiedIncidentActive = false;
+    unverifiedIncidentDirection = 0;
+    unverifiedIncidentWeight = 0.0f;
+    unverifiedRecoveryStart = 0;
+
+    if (clearSecurityAlert) {
+        securityAlertRaised = false;
+    }
+}
+
+// Handles unverified recovery workflow logic and related state transitions.
+bool handleUnverifiedRecovery(float delta) {
+    if (!unverifiedIncidentActive || unverifiedIncidentDirection == 0 || unverifiedIncidentWeight <= 0.0f) {
+        unverifiedRecoveryStart = 0;
+        return false;
+    }
+
+    float expectedDelta = unverifiedIncidentDirection > 0 ? -unverifiedIncidentWeight : unverifiedIncidentWeight;
+    float tolerance = fmaxf(
+        unverifiedIncidentWeight * UNVERIFIED_RECOVERY_TOLERANCE,
+        UNVERIFIED_RECOVERY_MIN_TOLERANCE_GRAMS
+    );
+    bool inRecoveryRange = fabsf(delta - expectedDelta) <= tolerance;
+    if (!inRecoveryRange) {
+        unverifiedRecoveryStart = 0;
+        return false;
+    }
+
+    unsigned long now = millis();
+    if (unverifiedRecoveryStart == 0) {
+        unverifiedRecoveryStart = now;
+        return false;
+    }
+
+    if (now - unverifiedRecoveryStart < UNVERIFIED_RECOVERY_HOLD_MS) {
+        return false;
+    }
+
+    baselineWeight = currentWeight;
+    clearUnverifiedIncident(true);
+    unverifiedRiseStart = 0;
+    return true;
+}
+
+// Runs the beep routine for this module.
 void beep(int durationMs) {
     if (buzzerReady) {
         ledcWriteTone(BUZZER_PIN, BUZZER_FREQUENCY);
@@ -144,6 +207,7 @@ void beep(int durationMs) {
     digitalWrite(BUZZER_PIN, LOW);
 }
 
+// Runs the lcd print routine for this module.
 void lcdPrint(const String& line1, const String& line2) {
     String clippedLine1 = fitLcdLine(line1);
     String clippedLine2 = fitLcdLine(line2);
@@ -160,6 +224,7 @@ void lcdPrint(const String& line1, const String& line2) {
     lcd.print(clippedLine2);
 }
 
+// Resets scale tracking back to a known baseline state.
 void resetScaleTracking() {
     baselineWeight = 0.0f;
     currentWeight = 0.0f;
@@ -167,9 +232,10 @@ void resetScaleTracking() {
     emptyCartStart = millis();
     resetVerificationTracking();
     resetIdleSpikeTracking();
-    securityAlertRaised = false;
+    clearUnverifiedIncident(true);
 }
 
+// Runs the tare scale routine for this module.
 void tareScale(const char* reason) {
     scale.tare();
     resetScaleTracking();
@@ -177,6 +243,7 @@ void tareScale(const char* reason) {
     Serial.println(reason);
 }
 
+// Connects to wi fi and initializes communication state.
 void connectWiFi() {
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);
@@ -197,6 +264,7 @@ void connectWiFi() {
     }
 }
 
+// Ensures wi fi is ready before continuing.
 void ensureWiFi() {
     if (WiFi.status() == WL_CONNECTED) return;
     if (millis() - lastWifiRetry < WIFI_RETRY_INTERVAL_MS) return;
@@ -206,6 +274,7 @@ void ensureWiFi() {
     WiFi.begin(SSID, PASSWORD);
 }
 
+// Runs the post json routine for this module.
 bool postJson(const String& endpoint, const String& body, String& responseBody, int& httpCode) {
     if (WiFi.status() != WL_CONNECTED) {
         httpCode = -1;
@@ -218,6 +287,7 @@ bool postJson(const String& endpoint, const String& body, String& responseBody, 
     http.begin(tlsClient, SERVER_BASE + endpoint);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("ngrok-skip-browser-warning", "true");
+    http.addHeader("X-Hardware-Key", HARDWARE_API_KEY);
 
     httpCode = http.POST(body);
     responseBody = http.getString();
@@ -225,6 +295,7 @@ bool postJson(const String& endpoint, const String& body, String& responseBody, 
     return httpCode > 0;
 }
 
+// Retrieves json and returns it to the caller.
 bool getJson(const String& endpoint, JsonDocument& doc) {
     if (WiFi.status() != WL_CONNECTED) return false;
 
@@ -232,6 +303,7 @@ bool getJson(const String& endpoint, JsonDocument& doc) {
     http.setReuse(true);
     http.begin(tlsClient, SERVER_BASE + endpoint);
     http.addHeader("ngrok-skip-browser-warning", "true");
+    http.addHeader("X-Hardware-Key", HARDWARE_API_KEY);
 
     int code = http.GET();
     if (code != 200) {
@@ -244,6 +316,7 @@ bool getJson(const String& endpoint, JsonDocument& doc) {
     return deserializeJson(doc, payload) == DeserializationError::Ok;
 }
 
+// Runs the post empty json routine for this module.
 bool postEmptyJson(const String& endpoint) {
     String responseBody;
     int code = 0;
@@ -251,13 +324,16 @@ bool postEmptyJson(const String& endpoint) {
     return code >= 200 && code < 300;
 }
 
+// Fetches pin from the server and updates local state.
 void fetchPin() {
     StaticJsonDocument<128> doc;
     if (getJson("/api/get_pin/" + CART_LABEL, doc)) {
-        currentPin = doc["pin"] | "WAIT";
+        // R2 - PIN field removal: read the protected display_code key instead of a pin field.
+        currentPin = doc["display_code"] | "WAIT";
     }
 }
 
+// Synchronizes hardware state between local state and server state.
 void syncHardwareState() {
     StaticJsonDocument<256> doc;
     if (!getJson("/api/hardware_state/" + CART_LABEL, doc)) return;
@@ -283,10 +359,11 @@ void syncHardwareState() {
         baselineWeight = currentWeight;
         resetVerificationTracking();
         resetIdleSpikeTracking();
-        securityAlertRaised = false;
+        clearUnverifiedIncident(true);
     }
 }
 
+// Confirms placement and clears pending verification state.
 void confirmPlacement() {
     if (!postEmptyJson("/api/confirm_placement/" + CART_LABEL)) return;
 
@@ -300,9 +377,11 @@ void confirmPlacement() {
     placementStableStart = 0;
     placementMismatchStart = 0;
     emptyCartStart = 0;
+    clearUnverifiedIncident(true);
     delay(800);
 }
 
+// Confirms removal and clears pending verification state.
 void confirmRemoval() {
     if (!postEmptyJson("/api/confirm_removal/" + CART_LABEL)) return;
 
@@ -312,20 +391,24 @@ void confirmRemoval() {
     removalStableStart = 0;
     removalMismatchStart = 0;
     emptyCartStart = 0;
+    clearUnverifiedIncident(true);
 }
 
+// Runs the trigger security alert routine for this module.
 void triggerSecurityAlert() {
     lcdPrint("Security alert", "Unknown item");
-    beep(5000);
     postEmptyJson("/api/report_alert/" + CART_LABEL);
+    beep(ALERT_BUZZER_DURATION_MS);
 }
 
+// Runs the trigger removal alert routine for this module.
 void triggerRemovalAlert() {
     lcdPrint("Security alert", "Item removed");
-    beep(5000);
     postEmptyJson("/api/report_alert/" + CART_LABEL);
+    beep(ALERT_BUZZER_DURATION_MS);
 }
 
+// Handles local scan workflow logic and related state transitions.
 void handleLocalScan(const String& barcode) {
     StaticJsonDocument<192> req;
     req["barcode"] = barcode;
@@ -363,6 +446,7 @@ void handleLocalScan(const String& barcode) {
     lcdPrint("Scan failed", message.substring(0, 16));
 }
 
+// Reads weight from hardware or runtime inputs.
 void readWeight() {
     if (!scale.is_ready()) return;
 
@@ -399,6 +483,7 @@ void readWeight() {
     currentWeight = stableWeight;
 }
 
+// Runs the evaluate pending verification routine for this module.
 void evaluatePendingVerification(bool isPlacement) {
     unsigned long& stableStart = isPlacement ? placementStableStart : removalStableStart;
     unsigned long& mismatchStart = isPlacement ? placementMismatchStart : removalMismatchStart;
@@ -452,6 +537,7 @@ void evaluatePendingVerification(bool isPlacement) {
     }
 }
 
+// Handles negative auto tare workflow logic and related state transitions.
 void handleNegativeAutoTare() {
     if (pendingPlacement || pendingRemoval) {
         negativeWeightStart = 0;
@@ -472,6 +558,7 @@ void handleNegativeAutoTare() {
     negativeWeightStart = 0;
 }
 
+// Handles empty cart auto tare workflow logic and related state transitions.
 void handleEmptyCartAutoTare() {
     if (pendingPlacement || pendingRemoval) {
         emptyCartStart = 0;
@@ -492,6 +579,7 @@ void handleEmptyCartAutoTare() {
     emptyCartStart = 0;
 }
 
+// Runs the evaluate weight security routine for this module.
 void evaluateWeightSecurity() {
     float delta = currentWeight - baselineWeight;
 
@@ -506,9 +594,13 @@ void evaluateWeightSecurity() {
     }
 
     if (checkoutPending) {
-        if (fabsf(currentWeight) <= EMPTY_CART_BAND) {
+        if (fabsf(currentWeight) <= EMPTY_CART_BAND && !unverifiedIncidentActive) {
             securityAlertRaised = false;
         }
+        return;
+    }
+
+    if (handleUnverifiedRecovery(delta)) {
         return;
     }
 
@@ -527,6 +619,10 @@ void evaluateWeightSecurity() {
         if (millis() - unverifiedRiseStart >= SECURITY_RISE_HOLD_MS) {
             triggerSecurityAlert();
             securityAlertRaised = true;
+            unverifiedIncidentActive = true;
+            unverifiedIncidentDirection = 1;
+            unverifiedIncidentWeight = fabsf(delta);
+            unverifiedRecoveryStart = 0;
             baselineWeight = currentWeight;
             unverifiedRiseStart = 0;
         }
@@ -538,6 +634,10 @@ void evaluateWeightSecurity() {
         if (millis() - unverifiedRiseStart >= SECURITY_RISE_HOLD_MS) {
             triggerRemovalAlert();
             securityAlertRaised = true;
+            unverifiedIncidentActive = true;
+            unverifiedIncidentDirection = -1;
+            unverifiedIncidentWeight = fabsf(delta);
+            unverifiedRecoveryStart = 0;
             baselineWeight = currentWeight;
             unverifiedRiseStart = 0;
         }
@@ -545,11 +645,12 @@ void evaluateWeightSecurity() {
         unverifiedRiseStart = 0;
     }
 
-    if (fabsf(currentWeight) <= EMPTY_CART_BAND) {
+    if (fabsf(currentWeight) <= EMPTY_CART_BAND && !unverifiedIncidentActive) {
         securityAlertRaised = false;
     }
 }
 
+// Renders status for the current user interface state.
 void renderStatus() {
     if (WiFi.status() != WL_CONNECTED) {
         lcdPrint("WiFi lost", "Reconnecting");
@@ -567,7 +668,7 @@ void renderStatus() {
     }
 
     if (checkoutPending) {
-        lcdPrint("Head to cashier", "Total Rs " + String(totalCost, 0));
+        lcdPrint("Head to cashier", "Cart " + CART_LABEL + " Rs " + String(totalCost, 0));
         return;
     }
 
@@ -584,6 +685,7 @@ void renderStatus() {
     lcdPrint("Weight " + String(currentWeight, 1) + "g", "PIN " + currentPin);
 }
 
+// Runs the setup routine for this module.
 void setup() {
     Serial.begin(115200);
     Serial2.begin(9600);
@@ -614,6 +716,7 @@ void setup() {
     delay(1000);
 }
 
+// Runs the loop routine for this module.
 void loop() {
     ensureWiFi();
     readWeight();

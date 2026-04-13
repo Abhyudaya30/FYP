@@ -69,7 +69,9 @@
         <p id="error-msg" style="color: #ef4444; margin-top: 15px; display: none;"></p>
     </div>
 
+    <!-- Page-specific client-side behavior -->
     <script>
+        // Checks pin and reports the current status.
         async function checkPin() {
             const pin = document.getElementById('pin-field').value;
             const label = "{{ cart_label }}";

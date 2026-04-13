@@ -19,29 +19,40 @@
         </div>
 </div>
 
+<!-- Page-specific client-side behavior -->
 <script>
+    // Runs the refresh dashboard routine for this module.
     async function refreshDashboard() {
         try {
             const res = await fetch('/api/all_carts_status');
+            // R2 - Auth enforcement UX: redirect to login when staff session is no longer valid.
+            if (res.status === 401) {
+                window.location.href = '/cashier';
+                return;
+            }
             const carts = await res.json();
             const wrapper = document.getElementById('cart-wrapper');
             
             let htmlString = "";
             carts.forEach(c => {
                 const isActive = (c.status === 'active');
+                const awaitingPin = (c.status === 'awaiting_pin');
                 const waitingForCashier = isActive && c.checkout_requested;
-                const statusLabel = waitingForCashier ? 'Awaiting Cashier' : (isActive ? 'Busy' : 'Idle');
+                const statusLabel = waitingForCashier
+                    ? 'Awaiting Cashier'
+                    : (isActive ? 'Busy' : (awaitingPin ? 'PIN Issued' : 'Idle'));
                 htmlString += `
-                    <div class="card ${isActive ? 'active' : ''}">
+                    <div class="card ${(isActive || awaitingPin) ? 'active' : ''}">
                         <div class="card-top-row">
                             <div class="cart-title">CART ${c.cart_label}</div>
-                            ${c.verification_alert ? '<span class="cashier-alert-icon" title="Unverified item in cart">⚠</span>' : ''}
+                            ${c.verification_alert ? '<span class="cashier-alert-icon" title="Unverified item in cart">!</span>' : ''}
                         </div>
-                        <span class="status-tag ${isActive ? 'status-active' : 'status-idle'}">
+                        <span class="status-tag ${(isActive || awaitingPin) ? 'status-active' : 'status-idle'}">
                             ${statusLabel}
                         </span>
                         <div class="price-display">Rs. ${c.total_cost}</div>
-                        <p style="margin:10px 0 0; color:#444; font-weight:600;">PIN: ${c.pin || 'WAIT'}</p>
+                        <!-- R2 - Staff-only code display: shown only after authenticated cashier session check. -->
+                        <p style="margin:10px 0 0; color:#444; font-weight:600;">PIN: ${c.display_code || 'WAIT'}</p>
                         
                         ${isActive ? `
                             <button class="btn-main" onclick="window.location.href='/bill/${c.cart_label}'">Open Bill</button>

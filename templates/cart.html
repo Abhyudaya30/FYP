@@ -8,15 +8,19 @@
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body class="app-bg">
+  <!-- Main page container for this view -->
   <div class="app-shell">
+    <!-- Header area with title and controls -->
     <header class="top-bar">
-      <span id="verificationAlertIcon" class="verification-icon" title="Unverified item in cart" aria-hidden="true">⚠</span>
+      <span id="verificationAlertIcon" class="verification-icon" title="Unverified item in cart" aria-hidden="true">!</span>
       <h1 class="top-title">Cart #<span id="displayCartLabel">00</span></h1>
       <span class="top-badge">Smart Cart</span>
     </header>
 
+    <!-- Primary content area for this page -->
     <main class="content">
 
+      <!-- Page section block -->
       <section class="scanner-section">
         <div class="scanner-shell">
 
@@ -37,13 +41,14 @@
           </div>
 
           <div class="scanner-status-bar">
-            <span class="status-icon">📡</span>
+            <span class="status-icon">LIVE</span>
             <p id="scan-status">Camera ready for scanning</p>
           </div>
 
         </div>
       </section>
 
+      <!-- Page section block -->
       <section class="cart-header">
         <div>
           <h2 class="section-title">Items in Cart</h2>
@@ -52,8 +57,10 @@
         <span class="item-count-pill" id="itemCount">0 items</span>
       </section>
 
+      <!-- Page section block -->
       <section class="cart-list" id="cartList"></section>
 
+      <!-- Page section block -->
       <section class="summary-card">
         <div class="summary-row">
           <span>Subtotal</span>

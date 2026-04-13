@@ -40,21 +40,25 @@ const state = {
 };
 
 const barcodePattern = /^\d{3,14}$/;
+const SECURITY_POLL_INTERVAL_MS = 2500;
 
 let cartInterval = setInterval(updateCart, 2000);
-let securityInterval = setInterval(checkSecurity, 2500);
+let securityInterval = setInterval(checkSecurity, SECURITY_POLL_INTERVAL_MS);
 
+// Performs an API operation for json and returns parsed results.
 async function apiJson(url, options = {}) {
     const response = await fetch(url, options);
     const data = await response.json();
     return { ok: response.ok, data };
 }
 
+// Updates scan status in shared state for subsequent operations.
 function setScanStatus(text) {
     const el = document.getElementById("scan-status");
     if (el) el.innerText = text;
 }
 
+// Updates verification alert state in shared state for subsequent operations.
 function setVerificationAlertState(visible, message) {
     if (!verificationAlertIcon) return;
     verificationAlertIcon.classList.toggle("visible", visible);
@@ -62,6 +66,7 @@ function setVerificationAlertState(visible, message) {
     verificationAlertIcon.setAttribute("aria-hidden", visible ? "false" : "true");
 }
 
+// Ensures security alert popup is ready before continuing.
 function ensureSecurityAlertPopup() {
     let overlay = document.getElementById("securityAlertOverlay");
     if (overlay) return overlay;
@@ -104,6 +109,7 @@ function ensureSecurityAlertPopup() {
     return overlay;
 }
 
+// Shows security alert popup in the UI based on current conditions.
 function showSecurityAlertPopup(message) {
     const overlay = ensureSecurityAlertPopup();
     const textEl = document.getElementById("securityAlertText");
@@ -114,6 +120,7 @@ function showSecurityAlertPopup(message) {
     state.securityPopupVisible = true;
 }
 
+// Runs the hide security alert popup routine for this module.
 function hideSecurityAlertPopup() {
     const overlay = document.getElementById("securityAlertOverlay");
     if (!overlay) return;
@@ -121,11 +128,13 @@ function hideSecurityAlertPopup() {
     state.securityPopupVisible = false;
 }
 
+// Shows start camera in the UI based on current conditions.
 function showStartCamera(show) {
     if (!startCameraBtn) return;
     startCameraBtn.style.display = show ? "block" : "none";
 }
 
+// Updates start camera busy in shared state for subsequent operations.
 function setStartCameraBusy(busy) {
     if (!startCameraBtn) return;
     startCameraBtn.disabled = busy;
@@ -133,19 +142,46 @@ function setStartCameraBusy(busy) {
     startCameraBtn.style.cursor = busy ? "not-allowed" : "pointer";
 }
 
+// Runs the modal open routine for this module.
 function modalOpen() {
     return document.getElementById("scanModal").style.display === "flex";
 }
 
+// Runs the recover scanner after blocking popup routine for this module.
+function recoverScannerAfterBlockingPopup(delayMs = 250) {
+    if (modalOpen() || state.securityPopupVisible) return;
+    state.scanInProgress = false;
+    setScanStatus("Camera ready for scanning");
+    setTimeout(() => {
+        ensureScannerRunning();
+    }, delayMs);
+}
+
+// Shows blocking alert in the UI based on current conditions.
+function showBlockingAlert(message) {
+    alert(message);
+    recoverScannerAfterBlockingPopup();
+}
+
+// Shows blocking confirm in the UI based on current conditions.
+function showBlockingConfirm(message) {
+    const confirmed = confirm(message);
+    recoverScannerAfterBlockingPopup();
+    return confirmed;
+}
+
+// Returns whether secure context for camera meets the required condition.
 function isSecureContextForCamera() {
     return window.isSecureContext === true || window.location.hostname === "localhost";
 }
 
+// Returns whether ios family meets the required condition.
 function isIosFamily() {
     const ua = navigator.userAgent || "";
     return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
+// Requests camera permission from the server and handles the response.
 async function requestCameraPermission() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         return { granted: false, reason: "unsupported" };
@@ -157,12 +193,12 @@ async function requestCameraPermission() {
         stream.getTracks().forEach(track => track.stop());
         return { granted: true, reason: "" };
     } catch (err) {
-        console.log("getUserMedia permission failed", err);
         const reason = err && err.name ? err.name : "unknown";
         return { granted: false, reason };
     }
 }
 
+// Retrieves camera to use and returns it to the caller.
 async function getCameraToUse() {
     if (!hasQrLib) return null;
     try {
@@ -173,11 +209,11 @@ async function getCameraToUse() {
         const rearCamera = cameras.find(c => /back|rear|environment/i.test(c.label || ""));
         return rearCamera ? rearCamera.id : cameras[0].id;
     } catch (err) {
-        console.log("Unable to enumerate cameras", err);
         return null;
     }
 }
 
+// Ensures scanner running is ready before continuing.
 async function ensureScannerRunning() {
     if (!hasQrLib || !scanner) {
         setScanStatus("Scanner library failed to load");
@@ -283,7 +319,6 @@ async function ensureScannerRunning() {
                 }
             }
         } catch (err) {
-            console.log("Unable to start scanner", err);
             const errName = err && err.name ? err.name : "";
             if (errName === "NotAllowedError" || errName === "PermissionDeniedError") {
                 setScanStatus("Camera blocked. Allow permission and tap again.");
@@ -306,6 +341,7 @@ async function ensureScannerRunning() {
     return scannerStartInFlight;
 }
 
+// Checks security and reports the current status.
 async function checkSecurity() {
     try {
         const { data } = await apiJson(`/api/hardware_state/${cartLabel}`);
@@ -325,10 +361,10 @@ async function checkSecurity() {
             hideSecurityAlertPopup();
         }
     } catch (err) {
-        console.log("Security check failed");
     }
 }
 
+// Renders cart for the current user interface state.
 function renderCart(data) {
     const cartList = document.getElementById("cartList");
     cartList.innerHTML = "";
@@ -356,6 +392,7 @@ function renderCart(data) {
     document.getElementById("summaryTotal").innerText = "Rs. " + data.total;
 }
 
+// Updates cart using the latest validated data.
 async function updateCart() {
     try {
         const { data } = await apiJson(`/api/get_cart/${cartLabel}`);
@@ -365,25 +402,26 @@ async function updateCart() {
         }
         renderCart(data);
     } catch (err) {
-        console.log("Searching for server...");
     }
 }
 
+// Removes item from the active collection or session.
 async function removeItem(barcode) {
-    if (!confirm("Are you sure you want to remove this item?")) return;
+    if (!showBlockingConfirm("Are you sure you want to remove this item?")) return;
     try {
         await fetch("/api/remove_item", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ barcode, cart_label: cartLabel })
         });
-        alert("Please physically remove the item from the cart now.");
+        showBlockingAlert("Please physically remove the item from the cart now.");
         updateCart();
     } catch (err) {
-        alert("Error removing item");
+        showBlockingAlert("Error removing item");
     }
 }
 
+// Runs the on scan success routine for this module.
 async function onScanSuccess(decodedText) {
     if (!scanner) return;
     const now = Date.now();
@@ -430,6 +468,7 @@ async function onScanSuccess(decodedText) {
     }
 }
 
+// Confirms addition and clears pending verification state.
 async function confirmAddition() {
     if (state.addInProgress || !state.currentScanData) return;
     state.addInProgress = true;
@@ -444,20 +483,21 @@ async function confirmAddition() {
         });
 
         if (data.status === "success") {
-            alert("Item added! Please place " + data.name + " in the cart.");
+            showBlockingAlert("Item added! Please place " + data.name + " in the cart.");
             updateCart();
         } else {
-            alert(data.message || "Unable to add item.");
+            showBlockingAlert(data.message || "Unable to add item.");
         }
         closeModal();
     } catch (err) {
-        alert("Server Error - check connection");
+        showBlockingAlert("Server Error - check connection");
         closeModal();
     } finally {
         state.addInProgress = false;
     }
 }
 
+// Runs the close modal routine for this module.
 function closeModal() {
     document.getElementById("scanModal").style.display = "none";
     state.currentScanData = null;
@@ -466,8 +506,9 @@ function closeModal() {
     setTimeout(ensureScannerRunning, 500);
 }
 
+// Ends session and performs required cleanup actions.
 async function endSession() {
-    if (!confirm("Are you sure you want to finish shopping?")) return;
+    if (!showBlockingConfirm("Are you sure you want to finish shopping?")) return;
 
     clearInterval(cartInterval);
     clearInterval(securityInterval);
@@ -477,7 +518,6 @@ async function endSession() {
             await scanner.stop();
         }
     } catch (err) {
-        console.log("Camera cleanup");
     }
 
     const response = await fetch(`/api/request_checkout/${cartLabel}`, { method: "POST" });
@@ -485,8 +525,8 @@ async function endSession() {
         window.location.href = `/success?label=${encodeURIComponent(cartLabel)}`;
     } else {
         cartInterval = setInterval(updateCart, 2000);
-        securityInterval = setInterval(checkSecurity, 2500);
-        alert("Error requesting cashier checkout.");
+        securityInterval = setInterval(checkSecurity, SECURITY_POLL_INTERVAL_MS);
+        showBlockingAlert("Error requesting cashier checkout.");
     }
 }
 

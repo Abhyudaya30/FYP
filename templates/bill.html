@@ -7,22 +7,28 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body class="app-bg">
+  <!-- Main page container for this view -->
   <div class="app-shell" style="max-width: 600px; margin: 40px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+    <!-- Header area with title and controls -->
     <header class="top-bar" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">
       <h1 class="top-title" style="margin: 0; font-size: 1.5rem; color: #333;">Bill for Cart #<span id="displayCartLabel">{{ cart_label }}</span></h1>
       <button style="background: #4f46e5; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;" onclick="window.location.href='/cashier/dashboard'">Back to Dashboard</button>
     </header>
 
+    <!-- Primary content area for this page -->
     <main class="content">
+      <!-- Page section block -->
       <section class="cart-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
         <h2 class="section-title" style="margin: 0; font-size: 1.2rem; color: #555;">Purchased Items</h2>
         <span class="item-count-pill" id="itemCount" style="background: #e0e7ff; color: #4338ca; padding: 4px 10px; border-radius: 20px; font-weight: bold; font-size: 0.9rem;">0 items</span>
       </section>
 
+      <!-- Page section block -->
       <section class="cart-list" id="cartList" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 25px;">
         <!-- Items will be injected here via JS -->
       </section>
 
+      <!-- Page section block -->
       <section class="summary-card" style="background: #f8f9fa; padding: 20px; border-radius: 10px; border: 1px solid #eee;">
         <div class="summary-row" style="display: flex; justify-content: space-between; font-size: 1.1rem; margin-bottom: 10px;">
           <span style="color: #666;">Subtotal</span>
@@ -42,9 +48,11 @@
     </main>
   </div>
 
+  <!-- Page-specific client-side behavior -->
   <script>
     const CART_LABEL = "{{ cart_label }}";
 
+    // Loads bill data and refreshes dependent UI or runtime state.
     async function loadBillData() {
         try {
             const res = await fetch(`/api/get_cart/${CART_LABEL}`);
@@ -88,6 +96,7 @@
         }
     }
 
+    // Approves and end session and completes the associated process.
     async function approveAndEndSession() {
         if(confirm(`Approve payment and end session for Cart ${CART_LABEL}?`)) {
             try {

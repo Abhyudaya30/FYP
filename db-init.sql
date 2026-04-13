@@ -4,15 +4,18 @@ USE smart_cart_system;
 -- NOTE: Table names are case-sensitive in Linux containers.
 -- app.py uses uppercase table names (CART, PRODUCT, ...), so we create them uppercase here.
 
+-- Stores each physical cart and the active PIN shown to customers.
 CREATE TABLE IF NOT EXISTS CART (
   cart_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
   cart_label VARCHAR(10) UNIQUE,
   pin VARCHAR(6)
 );
 
+-- Ensures legacy MAC-address column is removed if present from older schema versions.
 ALTER TABLE CART
   DROP COLUMN IF EXISTS mac_address;
 
+-- Stores product catalog details used for scan, billing, and weight verification.
 CREATE TABLE IF NOT EXISTS PRODUCT (
   product_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
   barcode VARCHAR(50) NOT NULL UNIQUE,
@@ -23,6 +26,7 @@ CREATE TABLE IF NOT EXISTS PRODUCT (
   weight INT(11) DEFAULT 0
 );
 
+-- Tracks active and completed shopping sessions for each cart.
 CREATE TABLE IF NOT EXISTS SHOPPING_SESSION (
   session_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
   cart_id INT(11) NOT NULL,
@@ -31,6 +35,7 @@ CREATE TABLE IF NOT EXISTS SHOPPING_SESSION (
   FOREIGN KEY (cart_id) REFERENCES CART(cart_id)
 );
 
+-- Stores per-session item quantities (many-to-many between session and product).
 CREATE TABLE IF NOT EXISTS CART_ITEM_BRIDGE (
   session_id INT(11) NOT NULL,
   product_id INT(11) NOT NULL,
@@ -40,6 +45,7 @@ CREATE TABLE IF NOT EXISTS CART_ITEM_BRIDGE (
   FOREIGN KEY (product_id) REFERENCES PRODUCT(product_id)
 );
 
+-- Stores hashed credentials for cashier and inventory admin accounts.
 CREATE TABLE IF NOT EXISTS ADMIN_ACCOUNT (
   admin_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(50) NOT NULL UNIQUE,
@@ -50,6 +56,7 @@ CREATE TABLE IF NOT EXISTS ADMIN_ACCOUNT (
 
 -- Initial admin row is auto-seeded by app.py on first login attempt if missing.
 
+-- Seeds base cart labels so the system can assign carts immediately.
 INSERT INTO CART (cart_label, pin)
 VALUES
   ('01', NULL),
@@ -58,6 +65,7 @@ ON DUPLICATE KEY UPDATE
   cart_label = VALUES(cart_label),
   pin = VALUES(pin);
 
+-- Seeds sample catalog data used for demo/testing scans.
 INSERT INTO PRODUCT (barcode, name, unit_price, expected_weight, stock_quantity, weight)
 VALUES
   ('7000001', 'Marie Biscuits', 35.00, 120.00, 50, 120),
