@@ -11,17 +11,12 @@ CREATE TABLE IF NOT EXISTS CART (
   pin VARCHAR(6)
 );
 
--- Ensures legacy MAC-address column is removed if present from older schema versions.
-ALTER TABLE CART
-  DROP COLUMN IF EXISTS mac_address;
-
 -- Stores product catalog details used for scan, billing, and weight verification.
 CREATE TABLE IF NOT EXISTS PRODUCT (
   product_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
   barcode VARCHAR(50) NOT NULL UNIQUE,
   name VARCHAR(255) NOT NULL,
   unit_price DECIMAL(10,2) NOT NULL,
-  expected_weight FLOAT NOT NULL,
   stock_quantity INT(11) NOT NULL,
   weight INT(11) DEFAULT 0
 );

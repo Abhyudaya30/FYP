@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+﻿from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_wtf.csrf import CSRFError, CSRFProtect
 import logging
 import mysql.connector
@@ -6,10 +6,13 @@ import os
 import random
 import re
 import time
+from urllib.parse import urlparse
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
 app.secret_key = "smartcart-secret-key"
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 # R6 - Cookie hardening: set explicit session cookie controls to reduce CSRF/cookie abuse risk.
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -149,10 +152,19 @@ def current_request_origin():
     return f"{request.scheme}://{request.host}"
 
 
+# Returns whether same request host meets the required condition.
+def is_same_request_host(origin):
+    try:
+        parsed_origin = urlparse(origin or "")
+        return bool(parsed_origin.scheme and parsed_origin.netloc and parsed_origin.netloc == request.host)
+    except Exception:
+        return False
+
+
 # Returns whether allowed origin meets the required condition.
 def is_allowed_origin(origin):
     # Always allow same-origin requests; only enforce TRUSTED_ORIGINS for cross-origin calls.
-    return bool(origin and (origin == current_request_origin() or is_trusted_origin(origin)))
+    return bool(origin and (is_same_request_host(origin) or origin == current_request_origin() or is_trusted_origin(origin)))
 
 
 # Enforces csrf and cors rules for request safety and consistency.
@@ -650,7 +662,7 @@ def admin_inventory():
 def verify_pin():
     data = request.json or {}
     label = data.get("cart_label")
-    entered_pin = data.get("pin")
+    entered_pin = str(data.get("pin") or "").strip()
     if not label or not entered_pin:
         return jsonify({"status": "error", "message": "Missing cart_label or pin"}), 400
 
@@ -665,7 +677,10 @@ def verify_pin():
         if not cart:
             conn.close()
             return jsonify({"status": "error", "message": "Cart not found!"}), 404
-        if cart["pin"] != entered_pin:
+
+        stored_pin = str(cart.get("pin") or "").strip()
+        if stored_pin != entered_pin:
+            conn.rollback()
             conn.close()
             return jsonify({"status": "error", "message": "Wrong PIN!"}), 401
 
@@ -678,8 +693,17 @@ def verify_pin():
                 "INSERT INTO SHOPPING_SESSION (cart_id, status, total_cost) VALUES (%s, 'active', 0)",
                 (cart["cart_id"],),
             )
-        # Hide PIN immediately after successful verification.
-        cursor.execute("UPDATE CART SET pin = NULL WHERE cart_id = %s", (cart["cart_id"],))
+
+        # Hide PIN only for the exact validated value to avoid clearing it on mismatched attempts.
+        cursor.execute(
+            "UPDATE CART SET pin = NULL WHERE cart_id = %s AND pin = %s",
+            (cart["cart_id"], stored_pin),
+        )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            conn.close()
+            return jsonify({"status": "error", "message": "Wrong PIN!"}), 401
+
         conn.commit()
         conn.close()
         session["verified_cart_label"] = label
@@ -758,7 +782,7 @@ def end_session(label):
 @app.route("/api/request_checkout/<label>", methods=["POST"])
 def request_checkout(label):
     # R1 - Session check: require a valid customer session before checkout request is accepted.
-    if not customer_session_active_for_label(label):
+    if not cart_access_authorized(label):
         return jsonify({"status": "error", "message": "Authentication required"}), 401
 
     try:

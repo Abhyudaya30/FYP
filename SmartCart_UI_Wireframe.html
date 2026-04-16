@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartCart UI Wireframes (B/W)</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --ink: #000000;
+      --line: #111111;
+      --muted: #5f5f5f;
+      --panel: #f8f8f8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Comic Sans MS", "Segoe Print", "Trebuchet MS", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.35;
+    }
+
+    h1, h2, h3, p {
+      margin: 0;
+    }
+
+    .page-title {
+      border: 3px solid var(--line);
+      padding: 14px 16px;
+      background: repeating-linear-gradient(
+        -45deg,
+        #fff,
+        #fff 8px,
+        #f4f4f4 8px,
+        #f4f4f4 16px
+      );
+      margin-bottom: 18px;
+    }
+
+    .page-title h1 {
+      font-size: 24px;
+      letter-spacing: 0.5px;
+    }
+
+    .page-title p {
+      color: var(--muted);
+      margin-top: 4px;
+      font-size: 14px;
+    }
+
+    .legend {
+      border: 2px dashed var(--line);
+      padding: 10px 12px;
+      margin-bottom: 24px;
+      font-size: 13px;
+      background: var(--panel);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 18px;
+    }
+
+    .wireframe {
+      border: 3px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: #fff;
+      box-shadow: 4px 4px 0 #222;
+      min-height: 530px;
+      position: relative;
+    }
+
+    .wireframe.desktop {
+      min-height: 420px;
+    }
+
+    .tag {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      border: 2px solid var(--line);
+      background: #efefef;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .wf-head {
+      border: 2px solid var(--line);
+      padding: 8px;
+      margin-bottom: 10px;
+      font-weight: bold;
+      background: var(--panel);
+    }
+
+    .block {
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      margin-bottom: 8px;
+      background: #fff;
+    }
+
+    .placeholder {
+      border: 2px dashed var(--line);
+      min-height: 56px;
+      background: #fbfbfb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+      padding: 8px;
+    }
+
+    .logo {
+      width: 78px;
+      height: 78px;
+      border: 3px solid var(--line);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      margin: 4px auto 10px;
+      background: #f0f0f0;
+      font-weight: bold;
+    }
+
+    .btn {
+      border: 2px solid var(--line);
+      background: #f2f2f2;
+      padding: 8px 10px;
+      border-radius: 8px;
+      text-align: center;
+      font-weight: bold;
+      margin-top: 8px;
+    }
+
+    .btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      margin-bottom: 6px;
+      align-items: center;
+    }
+
+    .row-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .line {
+      border-bottom: 2px solid #d8d8d8;
+      margin: 6px 0;
+    }
+
+    .table {
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 12px;
+    }
+
+    .tr {
+      display: grid;
+      grid-template-columns: 2fr 2fr 1fr 1fr 1fr 2fr;
+      border-bottom: 2px solid #d8d8d8;
+    }
+
+    .tr:last-child {
+      border-bottom: 0;
+    }
+
+    .td {
+      border-right: 2px solid #e2e2e2;
+      padding: 6px;
+    }
+
+    .td:last-child {
+      border-right: 0;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-title">
+    <h1>SmartCart Complete UI Wireframe</h1>
+    <p>Low-fidelity black-and-white mockup (Balsamiq style) covering all current project screens.</p>
+  </div>
+
+  <div class="legend">
+    <strong>Scope:</strong> Landing, PIN Verify, Customer Cart, Checkout Waiting, All Carts Busy, Cashier Login, Cashier Dashboard, Bill View, Inventory Login, Inventory Management, Change Password.
+  </div>
+
+  <section class="grid">
+    <article class="wireframe">
+      <span class="tag">1</span>
+      <div class="wf-head">Landing Page</div>
+      <div class="logo">CART</div>
+      <div class="placeholder">Smart Cart System Title</div>
+      <div class="block muted">Fast - Easy - Contactless</div>
+      <div class="block">Welcome text / intro line</div>
+      <div class="btn">Start Shopping</div>
+    </article>
+
+    <article class="wireframe">
+      <span class="tag">2</span>
+      <div class="wf-head">PIN Verification</div>
+      <div class="logo">PIN</div>
+      <div class="block">Enter Cart PIN (4 digits)</div>
+      <div class="placeholder">[ 0 0 0 0 ]</div>
+      <div class="btn">Access Cart</div>
+      <div class="block muted">Error message area</div>
+    </article>
+
+    <article class="wireframe">
+      <span class="tag">3</span>
+      <div class="wf-head">Customer Cart (Live Bill)</div>
+      <div class="row">
+        <div class="block">Cart #00</div>
+        <div class="block">Smart Cart</div>
+      </div>
+      <div class="placeholder">Barcode Scanner Viewport</div>
+      <div class="block muted">Scanner status: Camera ready / live</div>
+      <div class="row">
+        <div class="block">Items in Cart</div>
+        <div class="block">0 items</div>
+      </div>
+      <div class="placeholder">Scrollable cart list (item rows)</div>
+      <div class="block">
+        <div class="row"><span>Subtotal</span><strong>Rs. 0</strong></div>
+        <div class="row"><span>Discount</span><strong>Rs. 0</strong></div>
+        <div class="line"></div>
+        <div class="row"><span>Total Payable</span><strong>Rs. 0</strong></div>
+        <div class="btn">Finish Shopping</div>
+      </div>
+      <div class="btn-row">
+        <div class="btn">Modal: Add Item</div>
+        <div class="btn">Modal: Cancel</div>
+      </div>
+    </article>
+
+    <article class="wireframe">
+      <span class="tag">4</span>
+      <div class="wf-head">Checkout Requested (Success)</div>
+      <div class="logo">OK</div>
+      <div class="block">Please proceed to counter</div>
+      <div class="block muted">Waiting for cashier approval...</div>
+      <div class="block">
+        <strong>Your Bill</strong>
+        <div class="line"></div>
+        <div class="placeholder">Item lines and totals</div>
+        <div class="row"><span>Subtotal</span><strong>Rs. 0</strong></div>
+        <div class="row"><span>Total</span><strong>Rs. 0</strong></div>
+      </div>
+    </article>
+
+    <article class="wireframe">
+      <span class="tag">5</span>
+      <div class="wf-head">All Carts Busy</div>
+      <div class="logo">WAIT</div>
+      <div class="block">All carts are currently in use</div>
+      <div class="block muted">Active carts: list area</div>
+      <div class="btn">Try Now</div>
+      <div class="btn">Back to Home</div>
+    </article>
+
+    <article class="wireframe">
+      <span class="tag">6</span>
+      <div class="wf-head">Cashier Login</div>
+      <div class="logo">PAY</div>
+      <div class="block">Username</div>
+      <div class="block">Password</div>
+      <div class="btn">Login</div>
+      <div class="btn">Change Password</div>
+      <div class="block muted">Default login note</div>
+    </article>
+
+    <article class="wireframe desktop">
+      <span class="tag">7</span>
+      <div class="wf-head">Cashier Dashboard</div>
+      <div class="row">
+        <div class="block">Store Monitor</div>
+        <div class="btn">Reset All Carts</div>
+      </div>
+      <div class="row-3">
+        <div class="block">
+          <strong>Cart 01</strong>
+          <div class="line"></div>
+          <div class="muted">Status: Busy</div>
+          <div class="muted">PIN: 1234</div>
+          <div class="btn">Open Bill</div>
+          <div class="btn">End Session</div>
+        </div>
+        <div class="block">
+          <strong>Cart 02</strong>
+          <div class="line"></div>
+          <div class="muted">Status: Awaiting Cashier</div>
+          <div class="muted">PIN: 6543</div>
+          <div class="btn">Open Bill</div>
+          <div class="btn">Approve & End</div>
+        </div>
+        <div class="block">
+          <strong>Cart 03</strong>
+          <div class="line"></div>
+          <div class="muted">Status: Idle</div>
+          <div class="muted">Available for new customer</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="wireframe desktop">
+      <span class="tag">8</span>
+      <div class="wf-head">Bill View (Cashier)</div>
+      <div class="row">
+        <div class="block">Bill for Cart #01</div>
+        <div class="btn">Back to Dashboard</div>
+      </div>
+      <div class="block">
+        <div class="row"><span>Purchased Items</span><span>0 items</span></div>
+        <div class="placeholder">Item rows with qty and line totals</div>
+      </div>
+      <div class="block">
+        <div class="row"><span>Subtotal</span><strong>Rs. 0</strong></div>
+        <div class="line"></div>
+        <div class="row"><span>Total</span><strong>Rs. 0</strong></div>
+      </div>
+      <div class="btn">Approve Payment & Close</div>
+    </article>
+
+    <article class="wireframe">
+      <span class="tag">9</span>
+      <div class="wf-head">Inventory Login</div>
+      <div class="logo">INV</div>
+      <div class="block">Username</div>
+      <div class="block">Password</div>
+      <div class="btn">Login</div>
+      <div class="btn">Change Password</div>
+      <div class="block muted">Inventory access note</div>
+    </article>
+
+    <article class="wireframe desktop">
+      <span class="tag">10</span>
+      <div class="wf-head">Inventory Management</div>
+      <div class="row">
+        <div class="block">Inventory Management</div>
+        <div class="block">Inventory Badge</div>
+      </div>
+      <div class="block">
+        <strong>+ Add New Product</strong>
+        <div class="line"></div>
+        <div class="row-3">
+          <div class="block">Product Name</div>
+          <div class="block">Barcode</div>
+          <div class="block">Price</div>
+        </div>
+        <div class="row-3">
+          <div class="block">Stock</div>
+          <div class="block">Weight</div>
+          <div class="btn">Add Item</div>
+        </div>
+      </div>
+      <div class="table">
+        <div class="tr">
+          <div class="td"><strong>Name</strong></div>
+          <div class="td"><strong>Barcode</strong></div>
+          <div class="td"><strong>Price</strong></div>
+          <div class="td"><strong>Stock</strong></div>
+          <div class="td"><strong>Weight</strong></div>
+          <div class="td"><strong>Actions</strong></div>
+        </div>
+        <div class="tr">
+          <div class="td">Item A</div>
+          <div class="td">12345</div>
+          <div class="td">120</div>
+          <div class="td">15</div>
+          <div class="td">500g</div>
+          <div class="td">Edit | Save | Delete</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="wireframe">
+      <span class="tag">11</span>
+      <div class="wf-head">Change Password</div>
+      <div class="logo">PW</div>
+      <div class="block muted">Password rule guidance text</div>
+      <div class="block">Username</div>
+      <div class="block">Old Password</div>
+      <div class="block">New Password</div>
+      <div class="block">Confirm New Password</div>
+      <div class="btn">Update Password</div>
+      <div class="btn">Back</div>
+    </article>
+  </section>
+</body>
+</html>

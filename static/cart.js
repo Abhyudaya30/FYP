@@ -44,6 +44,7 @@ const SECURITY_POLL_INTERVAL_MS = 2500;
 
 let cartInterval = setInterval(updateCart, 2000);
 let securityInterval = setInterval(checkSecurity, SECURITY_POLL_INTERVAL_MS);
+let sessionRedirectInProgress = false;
 
 // Performs an API operation for json and returns parsed results.
 async function apiJson(url, options = {}) {
@@ -344,7 +345,17 @@ async function ensureScannerRunning() {
 // Checks security and reports the current status.
 async function checkSecurity() {
     try {
-        const { data } = await apiJson(`/api/hardware_state/${cartLabel}`);
+        const { ok, data } = await apiJson(`/api/hardware_state/${cartLabel}`);
+        if (!ok && data && data.message === "Authentication required") {
+            await redirectToLanding("Session ended. Redirecting to landing page...");
+            return;
+        }
+
+        if (data && data.status && data.status !== "active") {
+            await redirectToLanding("Session ended by cashier. Redirecting to landing page...");
+            return;
+        }
+
         const hasSecurityAlert = data.alert === true;
 
         const showAlert = hasSecurityAlert;
@@ -362,6 +373,25 @@ async function checkSecurity() {
         }
     } catch (err) {
     }
+}
+
+// Redirects customer to landing after ending active cart resources.
+async function redirectToLanding(statusMessage) {
+    if (sessionRedirectInProgress) return;
+    sessionRedirectInProgress = true;
+
+    clearInterval(cartInterval);
+    clearInterval(securityInterval);
+    setScanStatus(statusMessage || "Redirecting...");
+
+    try {
+        if (scanner && scanner.getState() === scannerStates.SCANNING) {
+            await scanner.stop();
+        }
+    } catch (err) {
+    }
+
+    window.location.href = "/";
 }
 
 // Renders cart for the current user interface state.
