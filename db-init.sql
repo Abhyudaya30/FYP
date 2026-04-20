@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS PRODUCT (
   name VARCHAR(255) NOT NULL,
   unit_price DECIMAL(10,2) NOT NULL,
   stock_quantity INT(11) NOT NULL,
+  expected_weight DECIMAL(10,2) DEFAULT 0,
   weight INT(11) DEFAULT 0
 );
 

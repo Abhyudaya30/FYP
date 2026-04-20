@@ -87,6 +87,11 @@ def staff_session_active():
     return bool(session.get("cashier_authenticated") or session.get("inventory_authenticated"))
 
 
+# Returns whether inventory role access is currently allowed.
+def inventory_role_required():
+    return session.get("role") == "inventory"
+
+
 # Runs the customer session active for label routine for this module.
 def customer_session_active_for_label(label):
     return session.get("verified_cart_label") == label
@@ -320,6 +325,12 @@ def validate_product_identity(name, barcode):
     return True, None
 
 
+# Returns whether product expected weight column exists in PRODUCT.
+def product_has_expected_weight_column(cursor):
+    cursor.execute("SHOW COLUMNS FROM PRODUCT LIKE 'expected_weight'")
+    return cursor.fetchone() is not None
+
+
 # Updates hw state in shared state for subsequent operations.
 def set_hw_state(label, placement=None, removal=None, expected_weight=None, alert=None):
     if placement is not None:
@@ -456,6 +467,7 @@ def landing_page():
 @app.route("/cashier")
 def cashier_landing_page():
     session.pop("cashier_authenticated", None)
+    session.pop("role", None)
     return render_template("cashier_landing.html", login_error=None)
 
 
@@ -476,6 +488,7 @@ def cashier_login():
     if verify_admin_credentials(username, password, role="cashier"):
         clear_login_failures(attempt_key)
         session["cashier_authenticated"] = True
+        session["role"] = "cashier"
         session["auth_username"] = username
         return redirect(url_for("cashier_page"))
 
@@ -490,6 +503,7 @@ def cashier_login():
 @app.route("/admin/inventory")
 def inventory_landing_page():
     session.pop("inventory_authenticated", None)
+    session.pop("role", None)
     return render_template("inventory_landing.html", login_error=None)
 
 
@@ -510,6 +524,7 @@ def inventory_login():
     if verify_admin_credentials(username, password, role="inventory"):
         clear_login_failures(attempt_key)
         session["inventory_authenticated"] = True
+        session["role"] = "inventory"
         session["auth_username"] = username
         return redirect(url_for("admin_inventory"))
 
@@ -628,6 +643,7 @@ def cashier_page():
     # R4 - Session check: redirect to cashier login when no cashier session exists.
     if not session.get("cashier_authenticated"):
         return redirect(url_for("cashier_landing_page"))
+    session["role"] = "cashier"
     return render_template("cashier.html")
 
 
@@ -643,6 +659,7 @@ def admin_inventory():
     # R5 - Session check: redirect to inventory login when no inventory session exists.
     if not session.get("inventory_authenticated"):
         return redirect(url_for("inventory_landing_page"))
+    session["role"] = "inventory"
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -905,6 +922,9 @@ def get_product_info(barcode):
 # Adds product to the active collection or session.
 @app.route("/api/add_product", methods=["POST"])
 def add_product():
+    if not inventory_role_required():
+        return jsonify({"status": "error", "message": "Unauthorized access"}), 403
+
     data = request.json or {}
     try:
         is_valid, error_message = validate_product_identity(data.get("name"), data.get("barcode"))
@@ -915,20 +935,35 @@ def add_product():
         normalized_barcode = data.get("barcode", "").strip()
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO PRODUCT (name, barcode, unit_price, stock_quantity, expected_weight, weight)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """,
-            (
-                data["name"],
-                normalized_barcode,
-                data["price"],
-                data["stock"],
-                item_weight,
-                item_weight,
-            ),
-        )
+        if product_has_expected_weight_column(cursor):
+            cursor.execute(
+                """
+                INSERT INTO PRODUCT (name, barcode, unit_price, stock_quantity, expected_weight, weight)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    data["name"],
+                    normalized_barcode,
+                    data["price"],
+                    data["stock"],
+                    item_weight,
+                    item_weight,
+                ),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO PRODUCT (name, barcode, unit_price, stock_quantity, weight)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    data["name"],
+                    normalized_barcode,
+                    data["price"],
+                    data["stock"],
+                    item_weight,
+                ),
+            )
         conn.commit()
         conn.close()
         return jsonify({"status": "success"})
@@ -941,6 +976,9 @@ def add_product():
 # Updates product using the latest validated data.
 @app.route("/api/update_product", methods=["POST"])
 def update_product():
+    if not inventory_role_required():
+        return jsonify({"status": "error", "message": "Unauthorized access"}), 403
+
     data = request.json or {}
     try:
         is_valid, error_message = validate_product_identity(data.get("name"), data.get("barcode"))
@@ -951,23 +989,41 @@ def update_product():
         normalized_barcode = data.get("barcode", "").strip()
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            """
-            UPDATE PRODUCT
-            SET name = %s, barcode = %s, unit_price = %s, stock_quantity = %s,
-                expected_weight = %s, weight = %s
-            WHERE product_id = %s
-            """,
-            (
-                data["name"],
-                normalized_barcode,
-                data["price"],
-                data["stock"],
-                item_weight,
-                item_weight,
-                data["id"],
-            ),
-        )
+        if product_has_expected_weight_column(cursor):
+            cursor.execute(
+                """
+                UPDATE PRODUCT
+                SET name = %s, barcode = %s, unit_price = %s, stock_quantity = %s,
+                    expected_weight = %s, weight = %s
+                WHERE product_id = %s
+                """,
+                (
+                    data["name"],
+                    normalized_barcode,
+                    data["price"],
+                    data["stock"],
+                    item_weight,
+                    item_weight,
+                    data["id"],
+                ),
+            )
+        else:
+            cursor.execute(
+                """
+                UPDATE PRODUCT
+                SET name = %s, barcode = %s, unit_price = %s, stock_quantity = %s,
+                    weight = %s
+                WHERE product_id = %s
+                """,
+                (
+                    data["name"],
+                    normalized_barcode,
+                    data["price"],
+                    data["stock"],
+                    item_weight,
+                    data["id"],
+                ),
+            )
         conn.commit()
         conn.close()
         return jsonify({"status": "success"})
@@ -980,6 +1036,9 @@ def update_product():
 # Deletes product and cleans up related records.
 @app.route("/api/delete_product/<int:product_id>", methods=["DELETE"])
 def delete_product(product_id):
+    if not inventory_role_required():
+        return jsonify({"status": "error", "message": "Unauthorized access"}), 403
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
